@@ -1,0 +1,65 @@
+// =============================================================
+// api.js — the ONLY place the frontend talks to the backend.
+// Every page calls these functions instead of using fetch() directly.
+// =============================================================
+
+// Generic helper: sends a request, returns the parsed JSON,
+// and turns error responses (4xx/5xx) into thrown Errors.
+export async function api(path, { method = "GET", body } = {}) {
+  const res = await fetch(`/api${path}`, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = new Error(data?.error || `Request failed (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+// Chat is special: the reply arrives in pieces (streaming).
+// We read the response body chunk by chunk and hand each piece to onText.
+export async function streamChat(message, onText) {
+  const res = await fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    throw new Error(data?.error || "Chat failed");
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    onText(decoder.decode(value, { stream: true }));
+  }
+}
+
+// Ask permission + subscribe this browser to push notifications
+export async function enableNotifications() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    throw new Error("This browser doesn't support push notifications.");
+  }
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") throw new Error("Notifications were blocked. Allow them in browser settings.");
+
+  const reg = await navigator.serviceWorker.ready;
+  const { publicKey } = await api("/push/key");
+  const subscription = await reg.pushManager.subscribe({
+    userVisibleOnly: true,
+    applicationServerKey: base64ToBytes(publicKey),
+  });
+  await api("/push/subscribe", { method: "POST", body: subscription.toJSON() });
+}
+
+function base64ToBytes(base64) {
+  const padded = (base64 + "=".repeat((4 - (base64.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+}
