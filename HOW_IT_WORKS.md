@@ -12,7 +12,7 @@ Read this with the code open next to you. Every concept points to the exact file
 | **Order slip** passed to the kitchen | **API request** (HTTP + JSON) | `client/src/api.js` |
 | **Kitchen**: does the real work | **Backend** (Node.js + Express) | `server/src/` |
 | **Storeroom + register**: remembers everything | **Database** (SQLite) | `server/src/db.js` |
-| **Expert consultant** the kitchen phones | **AI** (Claude API) | `server/src/ai.js` |
+| **Expert consultant** the kitchen phones | **AI** (Gemini or Claude) | `server/src/ai.js` + `providers/` |
 | **Alarm clock** in the kitchen | **Scheduler** (cron jobs) | `server/src/scheduler.js` |
 
 ```
@@ -29,7 +29,8 @@ Read this with the code open next to you. Every concept points to the exact file
  └───────┬──────────────────────┬─────────────────┘
          │ SQL                  │ HTTPS
    ┌─────▼──────┐        ┌──────▼──────┐
-   │  SQLite DB │        │ Claude API  │
+   │  SQLite DB │        │ Gemini or   │
+   │            │        │ Claude API  │
    │ (one file) │        │ (Anthropic) │
    └────────────┘        └─────────────┘
 ```
@@ -142,7 +143,8 @@ If anything fails, the error flows back the same way and React shows it in red.
 routes/   → "what URL, what input, what status code"   (HTTP stuff only)
 coach.js  → "what the feature does"                     (business logic)
 state.js  → "read & compute data"                       (queries)
-ai.js     → "talk to Claude"                            (external service)
+ai.js     → "talk to the AI" (picks a provider)         (external service)
+providers/→ "how to talk to Gemini / Claude specifically"
 db.js     → "the database connection + tables"          (storage)
 ```
 
@@ -187,7 +189,7 @@ reports (weekly) · push_subscriptions (devices) · settings (key/value)
 ## 6. AI concepts — `server/src/ai.js` and `coach.js`
 
 **1. The API forgets everything between calls (it's stateless).**
-Claude doesn't "remember" you. So every call, we send:
+The AI doesn't "remember" you. So every call, we send:
 - a **system prompt**: who the AI should be (`coachPersona()` in `ai.js`: friend/teacher/mentor, your chosen strictness and language)
 - your **context**: `buildContext()` in `state.js` builds a text summary of your profile, scores, this week's plan, today's tasks, last 7 days, recent check-ins and saved memories
 - the **conversation** (for chat: the last 30 messages)
@@ -200,7 +202,7 @@ And it gets *better* as you use the app, because the context grows.
 include them in every future conversation.
 
 **3. Structured output (JSON).** When we need *data*, not prose (scores, a roadmap, tasks),
-we give Claude a **JSON Schema** and it must reply in exactly that shape:
+we give the AI a **JSON Schema** and it must reply in exactly that shape:
 ```js
 askJSON({ prompt, schema: obj({ tasks: [...], morning_message: str }) })
 // → { tasks: [{title, details, minutes}, ...], morning_message: "..." }
@@ -209,7 +211,27 @@ That's why we can save AI answers straight into database tables.
 
 **4. Streaming.** Chat replies are sent piece by piece (`streamText()` → `res.write()` → `reader.read()` in the browser). It feels alive instead of making you wait.
 
-**5. Prompt engineering.** Look at the prompts in `coach.js`. Notice how they:
+**5. One interface, many providers (switch with one line).**
+The app never calls Google or Anthropic directly. It calls two functions from `ai.js`:
+`askJSON()` and `streamText()`. Behind them:
+
+```
+coach.js ──► ai.js ──┬──► providers/gemini.js ──► Google Gemini API
+ (features)  (switch)└──► providers/claude.js ──► Anthropic Claude API
+```
+
+`ai.js` reads `AI_PROVIDER` from `.env` and forwards the call. Each provider file translates our
+request into that company's format. For example, Gemini calls the assistant role `"model"` and
+Claude calls it `"assistant"`, and each SDK has different field names. Each provider also turns its own
+errors into friendly messages ("free-tier limit reached", "key invalid").
+**This is a real-world pattern called an adapter.** It's why switching AI later is a one-line change.
+
+**6. Two tiers of model: "smart" and "fast".**
+Not every job needs the most expensive model. In `coach.js`, the level test, the assessment + roadmap and the
+weekly report pass `tier: "smart"`. They're rare and quality matters. Daily tasks, check-ins and chat use
+`"fast"`. With Claude that's Opus vs Haiku, about 40× cheaper per token. This is how real apps control cost.
+
+**7. Prompt engineering.** Look at the prompts in `coach.js`. Notice how they:
 - give the AI a clear job and rules ("2 to 4 tasks", "under 100 words")
 - give examples of good output ("not 'study DSA' but 'Solve 3 easy array problems…'")
 - pass real data (yesterday's unfinished tasks, mood, blockers)
@@ -262,6 +284,7 @@ Results screen → Dashboard → AI plans your first day
 
 Run `npm run dev`. Each change shows up instantly when you save.
 
+0. **Easy, AI:** run `npm run models`, pick a different model and set it in `server/.env`. Compare the coach's answers.
 1. **Easy, frontend:** change the accent colour `--accent` in `styles.css`.
 2. **Easy, data:** add a question to `questions.js` (e.g. "What's your dream company?"). Notice the AI automatically uses it, because all answers go into the prompt.
 3. **Easy, prompting:** make the strict coach stricter in `STYLES` in `ai.js`.
@@ -289,7 +312,9 @@ Stuck? Ask me. Bring the error message and the file you changed.
 - **Env variable**: a setting/secret given to the program from outside the code
 - **Cron**: a schedule format for repeating jobs
 - **Service worker**: a background script in the browser
-- **LLM**: Large Language Model, the AI (Claude)
+- **LLM**: Large Language Model, the AI (Gemini, Claude)
+- **Provider**: the company whose AI you call (Google, Anthropic)
+- **Interface**: the functions the rest of the code relies on (`askJSON`, `streamText`). Any provider that implements them can be plugged in
 - **System prompt**: instructions that define how the AI behaves
 - **Context**: all the text you send the AI in one request
 - **Streaming**: sending a response in pieces as it's produced

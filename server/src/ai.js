@@ -1,89 +1,43 @@
 // =============================================================
-// ai.js — TALKING TO CLAUDE
+// ai.js — THE ONE DOOR TO THE AI
 // -------------------------------------------------------------
-// An LLM API is just an HTTP API: we send text (+ instructions),
-// it sends text back. The official SDK (@anthropic-ai/sdk) wraps
-// the HTTP calls for us.
+// The rest of the app only ever calls askJSON() and streamText()
+// from this file. WHICH AI company answers is decided here, from
+// AI_PROVIDER in server/.env:
 //
-// Two patterns live here:
+//   AI_PROVIDER=gemini  -> providers/gemini.js  (free tier)
+//   AI_PROVIDER=claude  -> providers/claude.js  (Opus + Haiku)
+//
+// Switching providers = changing ONE line in .env. That's the payoff
+// of keeping all AI code behind one small "interface".
+//
+// Two patterns:
 //   1. askJSON()    -> we need DATA back (scores, a plan, tasks).
-//                      We give Claude a JSON Schema and it MUST
-//                      reply in exactly that shape ("structured output").
+//                      We give the AI a JSON Schema and it MUST reply
+//                      in exactly that shape ("structured output").
 //   2. streamText() -> we need a chat reply, shown word-by-word.
+//
+// tier: "smart" for one-time/weekly jobs, "fast" for everyday jobs.
 // =============================================================
-import Anthropic from "@anthropic-ai/sdk";
+import * as claude from "./providers/claude.js";
+import * as gemini from "./providers/gemini.js";
 
-const MODEL = process.env.CLAUDE_MODEL || "claude-opus-5-5";
+const PROVIDERS = { claude, gemini };
+export const PROVIDER_NAME = (process.env.AI_PROVIDER || "gemini").toLowerCase();
+const provider = PROVIDERS[PROVIDER_NAME];
+if (!provider) {
+  throw new Error(`Unknown AI_PROVIDER "${PROVIDER_NAME}" in server/.env. Use "gemini" or "claude".`);
+}
+export const MODELS = provider.MODELS;
+export const listModels = provider.listModels;
 
-// If Claude's safety filter ever declines a (harmless) request, the
-// "fallbacks" option lets Anthropic retry it on another model instead
-// of failing. Set CLAUDE_FALLBACKS=off in .env to disable.
-const FALLBACK_OPTIONS =
-  process.env.CLAUDE_FALLBACKS === "off"
-    ? {}
-    : { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" };
-
-let client;
-function getClient() {
-  if (!process.env.ANTHROPIC_API_KEY) {
-    const err = new Error(
-      "No Claude API key found. Add ANTHROPIC_API_KEY to server/.env and restart the server.",
-    );
-    err.status = 500;
-    throw err;
-  }
-  // Create the client once and reuse it (it reads ANTHROPIC_API_KEY itself)
-  client ??= new Anthropic();
-  return client;
+export function askJSON({ system, prompt, schema, tier = "fast", effort = "low" }) {
+  return provider.askJSON({ system, prompt, schema, tier, effort });
 }
 
-function checkStop(message) {
-  if (message.stop_reason === "refusal") {
-    const err = new Error("The AI declined to answer that request.");
-    err.status = 422;
-    throw err;
-  }
-}
-
-function textOf(message) {
-  return message.content
-    .filter((b) => b.type === "text")
-    .map((b) => b.text)
-    .join("");
-}
-
-// ---- Pattern 1: structured JSON output ---------------------------------
-export async function askJSON({ system, prompt, schema, effort = "low" }) {
-  const message = await getClient().beta.messages.create({
-    model: MODEL,
-    max_tokens: 16000,
-    system,
-    messages: [{ role: "user", content: prompt }],
-    output_config: { effort, format: { type: "json_schema", schema } },
-    ...FALLBACK_OPTIONS,
-  });
-  checkStop(message);
-  if (message.stop_reason === "max_tokens") {
-    throw new Error("AI response was cut off (max_tokens). Try again.");
-  }
-  return JSON.parse(textOf(message));
-}
-
-// ---- Pattern 2: streaming chat ------------------------------------------
 // onText is called with each small piece of text as it arrives.
-export async function streamText({ system, messages, onText, effort = "low" }) {
-  const stream = getClient().beta.messages.stream({
-    model: MODEL,
-    max_tokens: 16000,
-    system,
-    messages,
-    output_config: { effort },
-    ...FALLBACK_OPTIONS,
-  });
-  stream.on("text", onText);
-  const message = await stream.finalMessage();
-  checkStop(message);
-  return textOf(message);
+export function streamText({ system, messages, onText, tier = "fast", effort = "low" }) {
+  return provider.streamText({ system, messages, onText, tier, effort });
 }
 
 // -------------------------------------------------------------

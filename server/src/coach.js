@@ -33,7 +33,8 @@ export async function generateQuiz(answers) {
   });
   return askJSON({
     system:
-      "You write short diagnostic quizzes that reveal a student's real level. Questions must be specific and answerable in under a minute each.",
+      "You write short diagnostic quizzes that reveal a student's real level. Questions must be specific and answerable in under a minute each. Double-check that correct_index points to the truly correct option.",
+    tier: "smart", // one-time, and the answer key must be correct
     prompt: `A student wants to learn: ${answers.learn}
 Their goal: ${answers.goal}
 They rate themselves: ${answers.level}
@@ -68,6 +69,7 @@ export async function completeOnboarding(answers, quiz) {
 
   const assessment = await askJSON({
     system: coachPersona({ coach_style: answers.coach_style, language: answers.language }),
+    tier: "smart", // one-time: your roadmap deserves the best model
     effort: "medium",
     prompt: `A new student just finished onboarding. Assess them honestly and build their plan.
 
@@ -253,6 +255,7 @@ export async function generateWeeklyReport() {
 
   const report = await askJSON({
     system: coachPersona(profile) + "\n\n# What you know\n" + buildContext(),
+    tier: "smart", // once a week, worth the better model
     effort: "medium",
     prompt: `Write the student's weekly report for the last 7 days.
 

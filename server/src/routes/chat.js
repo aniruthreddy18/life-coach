@@ -30,7 +30,7 @@ router.post("/chat", async (req, res) => {
     console.error("Chat failed:", err);
     // Headers are already sent, so we can't change the status code now.
     // We tell the user in the text instead.
-    res.write(`\n\n⚠️ ${err.status === 500 ? err.message : "Something went wrong talking to the AI. Try again."}`);
+    res.write(`\n\n⚠️ ${err.status ? err.message : "Something went wrong talking to the AI. Try again."}`);
   }
   res.end();
 });

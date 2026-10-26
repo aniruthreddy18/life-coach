@@ -5,7 +5,7 @@
 // passes them through "middleware" (like express.json(), which
 // turns the JSON body into a JS object), then to the right ROUTE.
 //
-//   Browser --HTTP--> Express --> route --> coach.js --> DB / Claude
+//   Browser --HTTP--> Express --> route --> coach.js --> DB / AI
 //   Browser <--JSON--  Express <------------ result
 // =============================================================
 import "./env.js"; // must be first!
@@ -13,7 +13,6 @@ import express from "express";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import Anthropic from "@anthropic-ai/sdk";
 
 import { router as onboarding } from "./routes/onboarding.js";
 import { router as daily } from "./routes/daily.js";
@@ -21,6 +20,7 @@ import { router as chat } from "./routes/chat.js";
 import { router as reports } from "./routes/reports.js";
 import { router as notifications } from "./routes/notifications.js";
 import { startScheduler } from "./scheduler.js";
+import { PROVIDER_NAME, MODELS } from "./ai.js";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -51,25 +51,14 @@ if (fs.existsSync(clientDist)) {
 }
 
 // --- Error handler: any error thrown in a route ends up here ---
+// AI errors arrive already "friendly" (status + clear message) from providers/*.js
 app.use((err, req, res, next) => {
-  console.error(err);
-  let status = err.status ?? 500;
-  let message = err.message ?? "Something went wrong";
-
-  if (err instanceof Anthropic.AuthenticationError) {
-    status = 500;
-    message = "Your Claude API key is invalid. Check ANTHROPIC_API_KEY in server/.env.";
-  } else if (err instanceof Anthropic.RateLimitError) {
-    status = 429;
-    message = "The AI is busy (rate limit). Wait a minute and try again.";
-  } else if (err instanceof Anthropic.APIError) {
-    status = 502;
-    message = `The AI service returned an error: ${err.message}`;
-  }
-  res.status(status).json({ error: message });
+  console.error(err.status ? `⚠️  ${err.message}` : err);
+  res.status(err.status ?? 500).json({ error: err.message ?? "Something went wrong" });
 });
 
 app.listen(PORT, () => {
   console.log(`✅ Life Coach API running at http://localhost:${PORT}`);
+  console.log(`🤖 AI: ${PROVIDER_NAME} — smart: ${MODELS.smart}, fast: ${MODELS.fast}`);
   startScheduler();
 });
