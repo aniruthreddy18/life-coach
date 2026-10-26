@@ -5,6 +5,7 @@
 // from this file. WHICH AI company answers is decided here, from
 // AI_PROVIDER in server/.env:
 //
+//   AI_PROVIDER=openai  -> providers/openai.js  (GPT: Sol + Luna)
 //   AI_PROVIDER=gemini  -> providers/gemini.js  (free tier)
 //   AI_PROVIDER=claude  -> providers/claude.js  (Opus + Haiku)
 //
@@ -19,14 +20,15 @@
 //
 // tier: "smart" for one-time/weekly jobs, "fast" for everyday jobs.
 // =============================================================
-import * as claude from "./providers/claude.js";
+import * as openai from "./providers/openai.js";
 import * as gemini from "./providers/gemini.js";
+import * as claude from "./providers/claude.js";
 
-const PROVIDERS = { claude, gemini };
-export const PROVIDER_NAME = (process.env.AI_PROVIDER || "gemini").toLowerCase();
+const PROVIDERS = { openai, gemini, claude };
+export const PROVIDER_NAME = (process.env.AI_PROVIDER || "openai").toLowerCase();
 const provider = PROVIDERS[PROVIDER_NAME];
 if (!provider) {
-  throw new Error(`Unknown AI_PROVIDER "${PROVIDER_NAME}" in server/.env. Use "gemini" or "claude".`);
+  throw new Error(`Unknown AI_PROVIDER "${PROVIDER_NAME}" in server/.env. Use "openai", "gemini" or "claude".`);
 }
 export const MODELS = provider.MODELS;
 export const listModels = provider.listModels;

@@ -12,7 +12,7 @@ Read this with the code open next to you. Every concept points to the exact file
 | **Order slip** passed to the kitchen | **API request** (HTTP + JSON) | `client/src/api.js` |
 | **Kitchen**: does the real work | **Backend** (Node.js + Express) | `server/src/` |
 | **Storeroom + register**: remembers everything | **Database** (SQLite) | `server/src/db.js` |
-| **Expert consultant** the kitchen phones | **AI** (Gemini or Claude) | `server/src/ai.js` + `providers/` |
+| **Expert consultant** the kitchen phones | **AI** (OpenAI, Gemini or Claude) | `server/src/ai.js` + `providers/` |
 | **Alarm clock** in the kitchen | **Scheduler** (cron jobs) | `server/src/scheduler.js` |
 
 ```
@@ -29,7 +29,8 @@ Read this with the code open next to you. Every concept points to the exact file
  └───────┬──────────────────────┬─────────────────┘
          │ SQL                  │ HTTPS
    ┌─────▼──────┐        ┌──────▼──────┐
-   │  SQLite DB │        │ Gemini or   │
+   │  SQLite DB │        │ OpenAI /    │
+   │            │        │ Gemini /    │
    │            │        │ Claude API  │
    │ (one file) │        │ (Anthropic) │
    └────────────┘        └─────────────┘
@@ -144,7 +145,7 @@ routes/   → "what URL, what input, what status code"   (HTTP stuff only)
 coach.js  → "what the feature does"                     (business logic)
 state.js  → "read & compute data"                       (queries)
 ai.js     → "talk to the AI" (picks a provider)         (external service)
-providers/→ "how to talk to Gemini / Claude specifically"
+providers/→ "how to talk to OpenAI / Gemini / Claude specifically"
 db.js     → "the database connection + tables"          (storage)
 ```
 
@@ -216,20 +217,22 @@ The app never calls Google or Anthropic directly. It calls two functions from `a
 `askJSON()` and `streamText()`. Behind them:
 
 ```
-coach.js ──► ai.js ──┬──► providers/gemini.js ──► Google Gemini API
- (features)  (switch)└──► providers/claude.js ──► Anthropic Claude API
+coach.js ──► ai.js ──┬──► providers/openai.js ──► OpenAI API (GPT)
+ (features)  (switch)├──► providers/gemini.js ──► Google Gemini API
+                     └──► providers/claude.js ──► Anthropic Claude API
 ```
 
 `ai.js` reads `AI_PROVIDER` from `.env` and forwards the call. Each provider file translates our
-request into that company's format. For example, Gemini calls the assistant role `"model"` and
-Claude calls it `"assistant"`, and each SDK has different field names. Each provider also turns its own
+request into that company's format. For example, Gemini calls the assistant role `"model"` while
+OpenAI and Claude call it `"assistant"`; OpenAI puts the system prompt in `instructions`, Claude in `system`,
+Gemini in `systemInstruction`. Each provider also turns its own
 errors into friendly messages ("free-tier limit reached", "key invalid").
 **This is a real-world pattern called an adapter.** It's why switching AI later is a one-line change.
 
 **6. Two tiers of model: "smart" and "fast".**
 Not every job needs the most expensive model. In `coach.js`, the level test, the assessment + roadmap and the
 weekly report pass `tier: "smart"`. They're rare and quality matters. Daily tasks, check-ins and chat use
-`"fast"`. With Claude that's Opus vs Haiku, about 40× cheaper per token. This is how real apps control cost.
+`"fast"`. With OpenAI that's Sol vs Luna, and with Claude it's Opus vs Haiku. The fast models are about 20–40× cheaper per token. This is how real apps control cost.
 
 **7. Prompt engineering.** Look at the prompts in `coach.js`. Notice how they:
 - give the AI a clear job and rules ("2 to 4 tasks", "under 100 words")
@@ -312,8 +315,8 @@ Stuck? Ask me. Bring the error message and the file you changed.
 - **Env variable**: a setting/secret given to the program from outside the code
 - **Cron**: a schedule format for repeating jobs
 - **Service worker**: a background script in the browser
-- **LLM**: Large Language Model, the AI (Gemini, Claude)
-- **Provider**: the company whose AI you call (Google, Anthropic)
+- **LLM**: Large Language Model, the AI (GPT, Gemini, Claude)
+- **Provider**: the company whose AI you call (OpenAI, Google, Anthropic)
 - **Interface**: the functions the rest of the code relies on (`askJSON`, `streamText`). Any provider that implements them can be plugged in
 - **System prompt**: instructions that define how the AI behaves
 - **Context**: all the text you send the AI in one request

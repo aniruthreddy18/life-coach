@@ -4,7 +4,7 @@ An app that gets to know you (12 onboarding questions + an AI level test), score
 builds a 12-week roadmap, plans your tasks every day, checks in with you every night,
 talks to you like a friend/teacher/mentor, and writes you a weekly report.
 
-**Stack:** React (Vite) · Node.js + Express · SQLite · Gemini or Claude API · Web Push · node-cron
+**Stack:** React (Vite) · Node.js + Express · SQLite · OpenAI, Gemini or Claude API · Web Push · node-cron
 
 > New to this? Read **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)**. It explains every part like you're a fresher.
 
@@ -25,8 +25,12 @@ node -v      # must print v22.13 or higher
 
 ## 2. Get an AI key
 
-The app works with **Google Gemini** (free tier, the default) or **Claude** (paid credits).
-You only need ONE of them to start.
+The app works with **OpenAI** (the default), **Google Gemini** (free tier) or **Claude**.
+You only need ONE of them.
+
+**OpenAI (default):**
+1. Go to https://platform.openai.com/api-keys and sign in.
+2. Make sure your account has billing/credits, then **Create new secret key** and copy it (starts with `sk-`).
 
 **Gemini (free):**
 1. Go to https://aistudio.google.com/apikey and sign in with your Google account.
@@ -50,10 +54,10 @@ Now create your secrets file by copying `server/.env.example` to `server/.env`:
 - **Windows (PowerShell):** `copy server\.env.example server\.env`
 - **Mac:** `cp server/.env.example server/.env`
 
-Open `server/.env` (Mac: `open -e server/.env`) and paste your Gemini key:
+Open `server/.env` (Mac: `open -e server/.env`) and paste your OpenAI key:
 ```
-AI_PROVIDER=gemini
-GEMINI_API_KEY=your-key-here
+AI_PROVIDER=openai
+OPENAI_API_KEY=sk-your-key-here
 ```
 
 Check the key works and see which models it can use:
@@ -86,37 +90,41 @@ is off, the app needs to be deployed online (that's a later phase).
 
 ---
 
-## Switching between Gemini and Claude
+## Switching between OpenAI, Gemini and Claude
 
 Everything AI-related goes through `server/src/ai.js`, so switching is **one line** in `server/.env`:
 
 ```
-AI_PROVIDER=gemini     # free tier (default)
-AI_PROVIDER=claude     # paid, best quality
+AI_PROVIDER=openai     # GPT (default)
+AI_PROVIDER=gemini     # free tier
+AI_PROVIDER=claude     # Opus + Haiku
 ```
 Restart the server after changing it (`Ctrl + C`, then `npm start`). The terminal prints which AI and models are in use.
 Your data (profile, plan, chats) stays. Only the "brain" changes.
 
 Each provider uses two models:
 
-| Tier | Used for | Gemini default | Claude default |
-|---|---|---|---|
-| **smart** | Level test, assessment + roadmap, weekly report | `gemini-flash-latest` | `claude-opus-5-5` |
-| **fast** | Daily tasks, check-ins, chat | `gemini-flash-latest` | `claude-haiku-5-5` |
+| Tier | Used for | OpenAI default | Gemini default | Claude default |
+|---|---|---|---|---|
+| **smart** | Level test, assessment + roadmap, weekly report | `gpt-6.1-sol` | `gemini-flash-latest` | `claude-opus-5-5` |
+| **fast** | Daily tasks, check-ins, chat | `gpt-6-luna` | `gemini-flash-latest` | `claude-haiku-5-5` |
 
-Change them with `GEMINI_MODEL_SMART` / `GEMINI_MODEL_FAST` / `CLAUDE_MODEL_SMART` / `CLAUDE_MODEL_FAST`.
+Change them with `OPENAI_MODEL_SMART` / `OPENAI_MODEL_FAST` (and the `GEMINI_…` / `CLAUDE_…` equivalents).
 
-**Cost:** Gemini's free tier costs nothing (it has daily limits). With Claude (Opus + Haiku), onboarding is
-about $0.20 once, then roughly $0.02–0.04 a day, so **$5 lasts about 4–7 months** for one person.
-Watch real spend at https://console.anthropic.com → Usage.
+**Cost (rough estimates for one person):**
+- **OpenAI (Sol + Luna):** onboarding ≈ $0.10 once, then ≈ $0.02–0.03 a day → **$5 ≈ 5–8 months**. Spend: https://platform.openai.com/usage
+- **Claude (Opus + Haiku):** onboarding ≈ $0.20 once, then ≈ $0.02–0.04 a day → **$5 ≈ 4–7 months**. Spend: https://console.anthropic.com → Usage
+- **Gemini:** free tier, with daily limits.
 
 ## Troubleshooting
 
 | Problem | Fix |
 |---|---|
 | "Can't reach the server" | Is the terminal running `npm run dev` / `npm start`? Any red error there? |
-| "No Gemini/Claude API key found" | You didn't create `server/.env`, or the key line is empty. Restart after editing. |
+| "No OpenAI/Gemini/Claude API key found" | You didn't create `server/.env`, or the key line is empty. Restart after editing. |
 | "Gemini rejected the request" / "key is invalid" | Re-copy the key; no spaces or quotes. Check `AI_PROVIDER` matches the key you added. |
+| "Your OpenAI account has no credits left" | Add billing at platform.openai.com → Billing. |
+| "OpenAI model … isn't available to your key" | Run `npm run models` and put a listed name in `OPENAI_MODEL_SMART` / `OPENAI_MODEL_FAST`. |
 | "Gemini free-tier limit reached" | Wait a minute (or until tomorrow for the daily limit), or switch to Claude. |
 | "Gemini model … not found" | Run `npm run models` and put a listed name in `GEMINI_MODEL_SMART` / `GEMINI_MODEL_FAST`. |
 | `node:sqlite` not found | Your Node is too old. Install the current LTS from nodejs.org. |
@@ -136,8 +144,9 @@ life-coach/
 │       ├── env.js          ← loads .env
 │       ├── db.js           ← database tables + SQL helpers
 │       ├── state.js        ← reads your data, computes streak/stats, builds AI context
-│       ├── ai.js           ← the one door to the AI: picks Gemini or Claude + coach personality
+│       ├── ai.js           ← the one door to the AI: picks OpenAI, Gemini or Claude + coach personality
 │       ├── providers/
+│       │   ├── openai.js   ← OpenAI (GPT) API calls
 │       │   ├── gemini.js   ← Google Gemini API calls
 │       │   └── claude.js   ← Anthropic Claude API calls
 │       ├── coach.js        ← features: quiz, assessment, tasks, check-in, chat, reports
