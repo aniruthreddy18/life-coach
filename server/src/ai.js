@@ -5,9 +5,10 @@
 // from this file. WHICH AI company answers is decided here, from
 // AI_PROVIDER in server/.env:
 //
-//   AI_PROVIDER=openai  -> providers/openai.js  (GPT: Sol + Luna)
-//   AI_PROVIDER=gemini  -> providers/gemini.js  (free tier)
-//   AI_PROVIDER=claude  -> providers/claude.js  (Opus + Haiku)
+//   AI_PROVIDER=openrouter -> providers/openrouter.js (GPT Sol + Luna via OpenRouter)
+//   AI_PROVIDER=openai     -> providers/openai.js     (GPT, direct from OpenAI)
+//   AI_PROVIDER=gemini     -> providers/gemini.js     (free tier)
+//   AI_PROVIDER=claude     -> providers/claude.js     (Opus + Haiku)
 //
 // Switching providers = changing ONE line in .env. That's the payoff
 // of keeping all AI code behind one small "interface".
@@ -20,15 +21,16 @@
 //
 // tier: "smart" for one-time/weekly jobs, "fast" for everyday jobs.
 // =============================================================
+import * as openrouter from "./providers/openrouter.js";
 import * as openai from "./providers/openai.js";
 import * as gemini from "./providers/gemini.js";
 import * as claude from "./providers/claude.js";
 
-const PROVIDERS = { openai, gemini, claude };
-export const PROVIDER_NAME = (process.env.AI_PROVIDER || "openai").toLowerCase();
+const PROVIDERS = { openrouter, openai, gemini, claude };
+export const PROVIDER_NAME = (process.env.AI_PROVIDER || "openrouter").toLowerCase();
 const provider = PROVIDERS[PROVIDER_NAME];
 if (!provider) {
-  throw new Error(`Unknown AI_PROVIDER "${PROVIDER_NAME}" in server/.env. Use "openai", "gemini" or "claude".`);
+  throw new Error(`Unknown AI_PROVIDER "${PROVIDER_NAME}" in server/.env. Use one of: ${Object.keys(PROVIDERS).join(", ")}.`);
 }
 export const MODELS = provider.MODELS;
 export const listModels = provider.listModels;

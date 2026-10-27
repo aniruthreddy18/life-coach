@@ -12,7 +12,7 @@ Read this with the code open next to you. Every concept points to the exact file
 | **Order slip** passed to the kitchen | **API request** (HTTP + JSON) | `client/src/api.js` |
 | **Kitchen**: does the real work | **Backend** (Node.js + Express) | `server/src/` |
 | **Storeroom + register**: remembers everything | **Database** (SQLite) | `server/src/db.js` |
-| **Expert consultant** the kitchen phones | **AI** (OpenAI, Gemini or Claude) | `server/src/ai.js` + `providers/` |
+| **Expert consultant** the kitchen phones | **AI** (via OpenRouter, OpenAI, Gemini or Claude) | `server/src/ai.js` + `providers/` |
 | **Alarm clock** in the kitchen | **Scheduler** (cron jobs) | `server/src/scheduler.js` |
 
 ```
@@ -145,7 +145,7 @@ routes/   → "what URL, what input, what status code"   (HTTP stuff only)
 coach.js  → "what the feature does"                     (business logic)
 state.js  → "read & compute data"                       (queries)
 ai.js     → "talk to the AI" (picks a provider)         (external service)
-providers/→ "how to talk to OpenAI / Gemini / Claude specifically"
+providers/→ "how to talk to OpenRouter / OpenAI / Gemini / Claude specifically"
 db.js     → "the database connection + tables"          (storage)
 ```
 
@@ -217,7 +217,8 @@ The app never calls Google or Anthropic directly. It calls two functions from `a
 `askJSON()` and `streamText()`. Behind them:
 
 ```
-coach.js ──► ai.js ──┬──► providers/openai.js ──► OpenAI API (GPT)
+coach.js ──► ai.js ──┬──► providers/openrouter.js ──► OpenRouter ──► GPT / Claude / Gemini…
+                     ├──► providers/openai.js ──► OpenAI API (GPT)
  (features)  (switch)├──► providers/gemini.js ──► Google Gemini API
                      └──► providers/claude.js ──► Anthropic Claude API
 ```
@@ -317,6 +318,7 @@ Stuck? Ask me. Bring the error message and the file you changed.
 - **Service worker**: a background script in the browser
 - **LLM**: Large Language Model, the AI (GPT, Gemini, Claude)
 - **Provider**: the company whose AI you call (OpenAI, Google, Anthropic)
+- **Router / gateway**: a service like OpenRouter that gives you ONE key and ONE API format for many providers' models
 - **Interface**: the functions the rest of the code relies on (`askJSON`, `streamText`). Any provider that implements them can be plugged in
 - **System prompt**: instructions that define how the AI behaves
 - **Context**: all the text you send the AI in one request

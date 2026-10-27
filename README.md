@@ -4,7 +4,7 @@ An app that gets to know you (12 onboarding questions + an AI level test), score
 builds a 12-week roadmap, plans your tasks every day, checks in with you every night,
 talks to you like a friend/teacher/mentor, and writes you a weekly report.
 
-**Stack:** React (Vite) · Node.js + Express · SQLite · OpenAI, Gemini or Claude API · Web Push · node-cron
+**Stack:** React (Vite) · Node.js + Express · SQLite · OpenRouter, OpenAI, Gemini or Claude API · Web Push · node-cron
 
 > New to this? Read **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)**. It explains every part like you're a fresher.
 
@@ -25,10 +25,15 @@ node -v      # must print v22.13 or higher
 
 ## 2. Get an AI key
 
-The app works with **OpenAI** (the default), **Google Gemini** (free tier) or **Claude**.
+The app works with **OpenRouter** (the default), **OpenAI**, **Google Gemini** (free tier) or **Claude**.
 You only need ONE of them.
 
-**OpenAI (default):**
+**OpenRouter (default):** one key that reaches GPT, Claude, Gemini and more.
+1. Go to https://openrouter.ai/keys and sign in.
+2. Add a few dollars at https://openrouter.ai/credits.
+3. **Create Key** and copy it (starts with `sk-or-`).
+
+**OpenAI (direct):**
 1. Go to https://platform.openai.com/api-keys and sign in.
 2. Make sure your account has billing/credits, then **Create new secret key** and copy it (starts with `sk-`).
 
@@ -54,10 +59,10 @@ Now create your secrets file by copying `server/.env.example` to `server/.env`:
 - **Windows (PowerShell):** `copy server\.env.example server\.env`
 - **Mac:** `cp server/.env.example server/.env`
 
-Open `server/.env` (Mac: `open -e server/.env`) and paste your OpenAI key:
+Open `server/.env` (Mac: `open -e server/.env`) and paste your OpenRouter key:
 ```
-AI_PROVIDER=openai
-OPENAI_API_KEY=sk-your-key-here
+AI_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-your-key-here
 ```
 
 Check the key works and see which models it can use:
@@ -90,12 +95,13 @@ is off, the app needs to be deployed online (that's a later phase).
 
 ---
 
-## Switching between OpenAI, Gemini and Claude
+## Switching AI providers
 
 Everything AI-related goes through `server/src/ai.js`, so switching is **one line** in `server/.env`:
 
 ```
-AI_PROVIDER=openai     # GPT (default)
+AI_PROVIDER=openrouter # GPT Sol + Luna via OpenRouter (default)
+AI_PROVIDER=openai     # GPT, direct from OpenAI
 AI_PROVIDER=gemini     # free tier
 AI_PROVIDER=claude     # Opus + Haiku
 ```
@@ -104,14 +110,16 @@ Your data (profile, plan, chats) stays. Only the "brain" changes.
 
 Each provider uses two models:
 
-| Tier | Used for | OpenAI default | Gemini default | Claude default |
-|---|---|---|---|---|
-| **smart** | Level test, assessment + roadmap, weekly report | `gpt-6-luna` | `gemini-flash-latest` | `claude-opus-5-5` |
-| **fast** | Daily tasks, check-ins, chat | `gpt-6-luna` | `gemini-flash-latest` | `claude-haiku-5-5` |
+| Tier | Used for | OpenRouter default | OpenAI default | Gemini default | Claude default |
+|---|---|---|---|---|---|
+| **smart** | Level test, assessment + roadmap, weekly report | `openai/gpt-6-sol` | `gpt-6-luna` | `gemini-flash-latest` | `claude-opus-5-5` |
+| **fast** | Daily tasks, check-ins, chat | `openai/gpt-6-luna` | `gpt-6-luna` | `gemini-flash-latest` | `claude-haiku-5-5` |
 
-Change them with `OPENAI_MODEL_SMART` / `OPENAI_MODEL_FAST` (and the `GEMINI_…` / `CLAUDE_…` equivalents).
+Change them with `OPENROUTER_MODEL_SMART` / `OPENROUTER_MODEL_FAST` (and the `OPENAI_…` / `GEMINI_…` / `CLAUDE_…` equivalents).
+On OpenRouter, model names include the company: `openai/…`, `anthropic/…`, `google/…`.
 
 **Cost (rough estimates for one person):**
+- **OpenRouter (Sol + Luna, the default):** onboarding ≈ $0.05–0.10 once, then ≈ $0.02–0.03 a day → **$5 ≈ 5–8 months**. Same model prices as OpenAI direct. Spend: https://openrouter.ai/activity
 - **OpenAI (Luna for everything, the default):** onboarding ≈ $0.01 once, then ≈ $0.01–0.02 a day → **$5 lasts many months, likely close to a year**.
   For better roadmaps and reports, set `OPENAI_MODEL_SMART=gpt-6.1-sol` (adds roughly $0.10 once plus a few cents a week). Spend: https://platform.openai.com/usage
 - **Claude (Opus + Haiku):** onboarding ≈ $0.20 once, then ≈ $0.02–0.04 a day → **$5 ≈ 4–7 months**. Spend: https://console.anthropic.com → Usage
@@ -122,8 +130,10 @@ Change them with `OPENAI_MODEL_SMART` / `OPENAI_MODEL_FAST` (and the `GEMINI_…
 | Problem | Fix |
 |---|---|
 | "Can't reach the server" | Is the terminal running `npm run dev` / `npm start`? Any red error there? |
-| "No OpenAI/Gemini/Claude API key found" | You didn't create `server/.env`, or the key line is empty. Restart after editing. |
+| "No OpenRouter/OpenAI/Gemini/Claude API key found" | You didn't create `server/.env`, or the key line is empty. Restart after editing. |
 | "Gemini rejected the request" / "key is invalid" | Re-copy the key; no spaces or quotes. Check `AI_PROVIDER` matches the key you added. |
+| "Your OpenRouter account is out of credits" | Add credits at openrouter.ai/credits. |
+| "OpenRouter couldn't use model …" | Run `npm run models` and copy an exact name into `OPENROUTER_MODEL_SMART` / `OPENROUTER_MODEL_FAST`. |
 | "Your OpenAI account has no credits left" | Add billing at platform.openai.com → Billing. |
 | "OpenAI model … isn't available to your key" | Run `npm run models` and put a listed name in `OPENAI_MODEL_SMART` / `OPENAI_MODEL_FAST`. |
 | "Gemini free-tier limit reached" | Wait a minute (or until tomorrow for the daily limit), or switch to Claude. |
@@ -145,8 +155,9 @@ life-coach/
 │       ├── env.js          ← loads .env
 │       ├── db.js           ← database tables + SQL helpers
 │       ├── state.js        ← reads your data, computes streak/stats, builds AI context
-│       ├── ai.js           ← the one door to the AI: picks OpenAI, Gemini or Claude + coach personality
+│       ├── ai.js           ← the one door to the AI: picks OpenRouter, OpenAI, Gemini or Claude + coach personality
 │       ├── providers/
+│       │   ├── openrouter.js ← OpenRouter API calls (default)
 │       │   ├── openai.js   ← OpenAI (GPT) API calls
 │       │   ├── gemini.js   ← Google Gemini API calls
 │       │   └── claude.js   ← Anthropic Claude API calls
