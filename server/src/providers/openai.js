@@ -4,14 +4,15 @@
 // Key: https://platform.openai.com/api-keys
 //
 // Same two tiers as the other providers:
-//   smart -> gpt-6.1-sol : level test, assessment + roadmap, weekly report
+//   smart -> gpt-6-luna  : level test, assessment + roadmap, weekly report
+//            (for better roadmaps, set OPENAI_MODEL_SMART=gpt-6.1-sol)
 //   fast  -> gpt-6-luna  : daily tasks, check-ins, chat (cheapest)
 // Run `npm run models` to see every model your key can use.
 // =============================================================
 import OpenAI from "openai";
 
 export const MODELS = {
-  smart: process.env.OPENAI_MODEL_SMART || "gpt-6.1-sol",
+  smart: process.env.OPENAI_MODEL_SMART || "gpt-6-luna",
   fast: process.env.OPENAI_MODEL_FAST || "gpt-6-luna",
 };
 

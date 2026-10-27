@@ -106,13 +106,14 @@ Each provider uses two models:
 
 | Tier | Used for | OpenAI default | Gemini default | Claude default |
 |---|---|---|---|---|
-| **smart** | Level test, assessment + roadmap, weekly report | `gpt-6.1-sol` | `gemini-flash-latest` | `claude-opus-5-5` |
+| **smart** | Level test, assessment + roadmap, weekly report | `gpt-6-luna` | `gemini-flash-latest` | `claude-opus-5-5` |
 | **fast** | Daily tasks, check-ins, chat | `gpt-6-luna` | `gemini-flash-latest` | `claude-haiku-5-5` |
 
 Change them with `OPENAI_MODEL_SMART` / `OPENAI_MODEL_FAST` (and the `GEMINI_…` / `CLAUDE_…` equivalents).
 
 **Cost (rough estimates for one person):**
-- **OpenAI (Sol + Luna):** onboarding ≈ $0.10 once, then ≈ $0.02–0.03 a day → **$5 ≈ 5–8 months**. Spend: https://platform.openai.com/usage
+- **OpenAI (Luna for everything, the default):** onboarding ≈ $0.01 once, then ≈ $0.01–0.02 a day → **$5 lasts many months, likely close to a year**.
+  For better roadmaps and reports, set `OPENAI_MODEL_SMART=gpt-6.1-sol` (adds roughly $0.10 once plus a few cents a week). Spend: https://platform.openai.com/usage
 - **Claude (Opus + Haiku):** onboarding ≈ $0.20 once, then ≈ $0.02–0.04 a day → **$5 ≈ 4–7 months**. Spend: https://console.anthropic.com → Usage
 - **Gemini:** free tier, with daily limits.
 
