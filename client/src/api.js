@@ -1,17 +1,32 @@
 // =============================================================
 // api.js — the ONLY place the frontend talks to the backend.
 // Every page calls these functions instead of using fetch() directly.
+//
+// Every request carries your sign-in token:
+//     Authorization: Bearer <access token>
+// The server checks it and only shows YOUR data. If the server says
+// 401 ("who are you?"), the session is dead, so we sign you out.
 // =============================================================
+import { accessToken } from "./supabase.js";
+
+let onUnauthorized = () => {};
+export const setUnauthorizedHandler = (fn) => (onUnauthorized = fn);
+
+async function authHeaders(extra = {}) {
+  const token = await accessToken();
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
+}
 
 // Generic helper: sends a request, returns the parsed JSON,
 // and turns error responses (4xx/5xx) into thrown Errors.
 export async function api(path, { method = "GET", body } = {}) {
   const res = await fetch(`/api${path}`, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : {},
+    headers: await authHeaders(body ? { "Content-Type": "application/json" } : {}),
     body: body ? JSON.stringify(body) : undefined,
   });
   if (res.status === 204) return null;
+  if (res.status === 401) onUnauthorized();
   const data = await res.json().catch(() => null);
   if (!res.ok) {
     const err = new Error(data?.error || `Request failed (${res.status})`);
@@ -26,9 +41,10 @@ export async function api(path, { method = "GET", body } = {}) {
 export async function streamChat(message, onText) {
   const res = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ message }),
   });
+  if (res.status === 401) onUnauthorized();
   if (!res.ok) {
     const data = await res.json().catch(() => null);
     throw new Error(data?.error || "Chat failed");
@@ -57,6 +73,20 @@ export async function enableNotifications() {
     applicationServerKey: base64ToBytes(publicKey),
   });
   await api("/push/subscribe", { method: "POST", body: subscription.toJSON() });
+}
+
+// Signing out: stop notifications on THIS device for this account
+export async function disableNotificationsHere() {
+  try {
+    if (!("serviceWorker" in navigator)) return;
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = await reg?.pushManager.getSubscription();
+    if (!sub) return;
+    await api("/push/unsubscribe", { method: "POST", body: { endpoint: sub.endpoint } });
+    await sub.unsubscribe();
+  } catch {
+    // not fatal: signing out still works
+  }
 }
 
 function base64ToBytes(base64) {

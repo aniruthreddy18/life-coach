@@ -3,11 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Backend API for the Life Coach app (Express + SQLite + OpenAI/Gemini/Claude)",
+  "description": "Backend API for the Life Coach app (Express + Supabase Postgres/Auth + OpenRouter)",
   "scripts": {
     "dev": "node --watch --disable-warning=ExperimentalWarning src/index.js",
     "start": "node --disable-warning=ExperimentalWarning src/index.js",
-    "models": "node --disable-warning=ExperimentalWarning scripts/list-models.js"
+    "models": "node --disable-warning=ExperimentalWarning scripts/list-models.js",
+    "doctor": "node --disable-warning=ExperimentalWarning scripts/doctor.js",
+    "db:setup": "node --disable-warning=ExperimentalWarning scripts/db-setup.js"
   },
   "engines": {
     "node": ">=22.13"
@@ -16,8 +18,10 @@
     "@anthropic-ai/sdk": "^0.100.1",
     "@google/genai": "^2.31.0",
     "express": "^5.3.0",
+    "jose": "^6.2.13",
     "node-cron": "^4.6.0",
     "openai": "^7.43.0",
+    "pg": "^8.23.1",
     "web-push": "^3.6.7"
   }
 }

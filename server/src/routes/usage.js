@@ -1,7 +1,7 @@
 // =============================================================
 // routes/usage.js
-//   GET /api/usage  -> AI spending today/this week, budget, AI status,
-//                      and how much the content library is saving
+//   GET /api/usage  -> your AI spending today/this week, budget, AI
+//                      status, and how much the shared library is saving
 // =============================================================
 import { Router } from "express";
 import { usageSummary } from "../usage.js";
@@ -10,12 +10,7 @@ import { PROVIDER_NAME, MODELS, AI_ENABLED } from "../ai.js";
 
 export const router = Router();
 
-router.get("/usage", (req, res) => {
-  res.json({
-    provider: PROVIDER_NAME,
-    aiEnabled: AI_ENABLED,
-    models: MODELS,
-    ...usageSummary(),
-    library: libraryStats(),
-  });
+router.get("/usage", async (req, res) => {
+  const [summary, library] = await Promise.all([usageSummary(req.user.id), libraryStats()]);
+  res.json({ provider: PROVIDER_NAME, aiEnabled: AI_ENABLED, models: MODELS, ...summary, library });
 });

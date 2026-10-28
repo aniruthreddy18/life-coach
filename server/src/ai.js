@@ -56,42 +56,45 @@ export class AIUnavailable extends Error {
   }
 }
 
-// Decide which model tier to use right now (or refuse)
-function chooseTier(tier) {
+// Decide which model tier to use right now for this student (or refuse)
+async function chooseTier(uid, tier) {
   if (!AI_ENABLED) throw new AIUnavailable("off", "AI is turned off (AI_PROVIDER=none).");
-  if (isOverBudget()) {
+  if (await isOverBudget(uid)) {
     if (MODELS.free) return "free";
     throw new AIUnavailable("budget", `Today's AI budget ($${DAILY_BUDGET_USD}) is used up. Back tomorrow!`);
   }
   return tier;
 }
 
+// uid = the student this call is for (budget + usage are per student)
 // feature = a label for the usage table ("quiz", "chat", ...)
-export async function askJSON({ feature, system, prompt, schema, tier = "fast", effort = "low" }) {
-  const useTier = chooseTier(tier);
+export async function askJSON({ uid, feature, system, prompt, schema, tier = "fast", effort = "low" }) {
+  const useTier = await chooseTier(uid, tier);
+  let result;
   try {
-    const { data, usage } = await provider.askJSON({ system, prompt, schema, tier: useTier, effort });
-    recordUsage({ feature, model: MODELS[useTier], ...usage });
-    setAIStatus(true);
-    return data;
+    result = await provider.askJSON({ system, prompt, schema, tier: useTier, effort });
   } catch (err) {
-    setAIStatus(false, err.message);
+    await setAIStatus(uid, false, err.message);
     throw new AIUnavailable("error", err.message);
   }
+  await recordUsage(uid, { feature, model: MODELS[useTier], ...result.usage });
+  await setAIStatus(uid, true);
+  return result.data;
 }
 
 // onText is called with each small piece of text as it arrives.
-export async function streamText({ feature, system, messages, onText, tier = "fast", effort = "low" }) {
-  const useTier = chooseTier(tier);
+export async function streamText({ uid, feature, system, messages, onText, tier = "fast", effort = "low" }) {
+  const useTier = await chooseTier(uid, tier);
+  let result;
   try {
-    const { text, usage } = await provider.streamText({ system, messages, onText, tier: useTier, effort });
-    recordUsage({ feature, model: MODELS[useTier], ...usage });
-    setAIStatus(true);
-    return text;
+    result = await provider.streamText({ system, messages, onText, tier: useTier, effort });
   } catch (err) {
-    setAIStatus(false, err.message);
+    await setAIStatus(uid, false, err.message);
     throw new AIUnavailable("error", err.message);
   }
+  await recordUsage(uid, { feature, model: MODELS[useTier], ...result.usage });
+  await setAIStatus(uid, true);
+  return result.text;
 }
 
 // -------------------------------------------------------------

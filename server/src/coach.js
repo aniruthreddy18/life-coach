@@ -9,16 +9,18 @@
 //   3. RULES fallback — AI off / over budget / no credits / offline?
 //                       Templates + math, so the app NEVER breaks (free)
 //
+// Every function takes `uid`, the signed-in student's id, and only
+// ever reads or writes that student's rows.
 // Routes (routes/*.js) call these; they don't talk to the AI directly.
 // =============================================================
-import { db, all, run, today } from "./db.js";
+import { all, get, run, transaction, today } from "./db.js";
 import { askJSON, streamText, coachPersona, AIUnavailable } from "./ai.js";
 import {
-  getProfile, buildContext, currentMilestone, currentWeekNumber, getMilestones, getTasks,
-  getMemorySummary, setMemorySummary,
+  getProfile, buildContext, currentMilestone, currentWeekNumber, getMilestones, getTasks, setMemorySummary,
 } from "./state.js";
 import * as rules from "./rules.js";
 import * as library from "./library.js";
+import { greeting } from "./messages.js";
 
 // Helper to describe JSON shapes for the AI (JSON Schema).
 // Every object must list its fields and forbid extra ones.
@@ -44,21 +46,22 @@ async function aiOrRules(aiFn, rulesFn) {
   }
 }
 
-const withContext = (profile) => coachPersona(profile) + "\n\n# What you know\n" + buildContext();
+const withContext = async (uid, profile) => coachPersona(profile) + "\n\n# What you know\n" + (await buildContext(uid));
 
 // ---- 1. Baseline quiz -----------------------------------------------------
-export async function generateQuiz(answers) {
+export async function generateQuiz(uid, answers) {
   const topics = library.detectTopics(answers.learn);
   const keys = topics.length ? topics : [library.topicKeyFor(answers.learn)];
 
   // 1. Library: built-in bank (DSA, SQL, Python…) or questions the AI wrote before
-  const saved = library.pickQuestions(keys);
+  const saved = await library.pickQuestions(keys);
   if (saved.length >= 5) return { questions: saved, source: "library" };
 
   // 2. AI writes them ONCE; saved so the next student with this subject gets them free
   return aiOrRules(
     async () => {
       const result = await askJSON({
+        uid,
         feature: "quiz",
         tier: "smart", // the answer key must be correct
         system:
@@ -73,16 +76,16 @@ Order: 2 easy, 2 medium, 1 hard. correct_index is 0-3.`,
           questions: { type: "array", items: obj({ question: str, options: strList, correct_index: int, topic: str }) },
         }),
       });
-      library.saveQuestions(keys[0], result.questions);
+      await library.saveQuestions(keys[0], result.questions);
       return { questions: result.questions };
     },
     // 3. Rules: general aptitude questions from the built-in bank
-    () => ({ questions: library.pickQuestions(["aptitude"]) }),
+    async () => ({ questions: await library.pickQuestions(["aptitude"]) }),
   );
 }
 
 // ---- 2. Assessment + roadmap ---------------------------------------------
-export async function completeOnboarding(answers, quiz) {
+export async function completeOnboarding(uid, answers, quiz) {
   // Grade the quiz on the server
   const correct = quiz.filter((q) => q.chosen_index === q.correct_index).length;
   const quizScore = quiz.length ? Math.round((correct / quiz.length) * 100) : null;
@@ -104,6 +107,7 @@ export async function completeOnboarding(answers, quiz) {
     aiOrRules(
       () =>
         askJSON({
+          uid,
           feature: "assessment",
           tier: "fast",
           system: persona,
@@ -138,11 +142,12 @@ ${quizSummary}
 
     // (b) Roadmap — library first, then the "smart" model, then a generic template
     (async () => {
-      const saved = library.findRoadmap(roadmapKey);
+      const saved = await library.findRoadmap(roadmapKey);
       if (saved) return { roadmap: saved, source: "library" };
       return aiOrRules(
         async () => {
           const { roadmap } = await askJSON({
+            uid,
             feature: "roadmap",
             tier: "smart",
             effort: "medium",
@@ -160,7 +165,7 @@ Keep it general to this goal and level (no names), so it can be reused for simil
               roadmap: { type: "array", items: obj({ week_number: int, title: str, focus: str, goals: strList }) },
             }),
           });
-          library.saveRoadmap(roadmapKey, roadmap);
+          await library.saveRoadmap(roadmapKey, roadmap);
           return { roadmap };
         },
         () => ({ roadmap: rules.genericRoadmap(answers) }),
@@ -168,103 +173,103 @@ Keep it general to this goal and level (no names), so it can be reused for simil
     })(),
   ]);
 
+  const { source, aiNote, memory_summary, ...assessmentToSave } = assessment;
+
   // Save everything in ONE transaction: either all of it is saved, or none.
-  db.exec("BEGIN");
-  try {
-    run("DELETE FROM tasks");
-    run("DELETE FROM milestones");
-    run("DELETE FROM profile");
-    run(
-      `INSERT INTO profile (id, name, answers, quiz_score, assessment, coach_style, language, start_date)
-       VALUES (1, ?, ?, ?, ?, ?, ?, ?)`,
+  // (Re-doing onboarding replaces this student's old plan.)
+  await transaction(async (q) => {
+    await q("DELETE FROM tasks WHERE user_id = $1", uid);
+    await q("DELETE FROM milestones WHERE user_id = $1", uid);
+    await q(
+      `INSERT INTO profiles (user_id, name, answers, quiz_score, assessment, coach_style, language, start_date, memory_summary)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       ON CONFLICT (user_id) DO UPDATE SET
+         name = excluded.name, answers = excluded.answers, quiz_score = excluded.quiz_score,
+         assessment = excluded.assessment, coach_style = excluded.coach_style, language = excluded.language,
+         start_date = excluded.start_date, memory_summary = excluded.memory_summary`,
+      uid,
       answers.name,
       JSON.stringify(answers),
       quizScore,
-      JSON.stringify(assessment),
+      JSON.stringify(assessmentToSave),
       answers.coach_style,
       answers.language,
       today(),
+      memory_summary ?? "",
     );
     for (const w of roadmapResult.roadmap) {
-      run(
-        "INSERT INTO milestones (week_number, title, focus, goals) VALUES (?, ?, ?, ?)",
-        w.week_number,
-        w.title,
-        w.focus,
-        JSON.stringify(w.goals),
+      await q(
+        "INSERT INTO milestones (user_id, week_number, title, focus, goals) VALUES ($1, $2, $3, $4, $5)",
+        uid, w.week_number, w.title, w.focus, JSON.stringify(w.goals),
       );
     }
-    run("INSERT INTO messages (role, content) VALUES ('assistant', ?)", assessment.first_message);
-    db.exec("COMMIT");
-  } catch (err) {
-    db.exec("ROLLBACK");
-    throw err;
-  }
-  setMemorySummary(assessment.memory_summary);
+    await q("INSERT INTO messages (user_id, role, content) VALUES ($1, 'assistant', $2)", uid, assessment.first_message);
+  });
 
   return {
     quizScore,
-    assessment: { ...assessment, roadmap: roadmapResult.roadmap },
-    sources: { assessment: assessment.source, roadmap: roadmapResult.source },
+    assessment: { ...assessmentToSave, roadmap: roadmapResult.roadmap },
+    sources: { assessment: source, roadmap: roadmapResult.source },
   };
 }
 
 // ---- 3. Tasks: planned a WEEK at a time ----------------------------------
 // One AI call plans 7 days (instead of 7 calls). Each day, rules carry
 // over up to 2 unfinished tasks from yesterday — no AI needed for that.
-let planning = null; // if two requests arrive at once, share one plan
+const planning = new Map(); // uid -> promise, so two requests share one plan
 
-export async function ensureTodayTasks() {
-  const profile = getProfile();
+export async function ensureTodayTasks(uid) {
+  const profile = await getProfile(uid);
   if (!profile) return { tasks: [], message: null };
 
-  if (!getTasks(today()).length) {
-    planning ??= planWeek(profile).finally(() => (planning = null));
-    await planning;
+  if (!(await getTasks(uid, today())).length) {
+    if (!planning.has(uid)) planning.set(uid, planWeek(uid, profile).finally(() => planning.delete(uid)));
+    await planning.get(uid);
   }
-  carryOverUnfinished();
-  const tasks = getTasks(today());
+  await carryOverUnfinished(uid);
+  const tasks = await getTasks(uid, today());
   return { tasks, message: rules.morningMessage(profile, tasks) };
 }
 
-function carryOverUnfinished() {
+async function carryOverUnfinished(uid) {
   const yesterday = today(-1);
-  const unfinished = all(
-    "SELECT * FROM tasks WHERE date = ? AND done = 0 AND carried = 0 ORDER BY id LIMIT 2",
-    yesterday,
+  const unfinished = await all(
+    "SELECT * FROM tasks WHERE user_id = $1 AND date = $2 AND NOT done AND NOT carried ORDER BY id LIMIT 2",
+    uid, yesterday,
   );
   for (const t of unfinished) {
     const title = t.title.startsWith("↩ ") ? t.title : `↩ ${t.title}`;
-    run(
-      "INSERT INTO tasks (date, title, details, minutes, milestone_id) VALUES (?, ?, ?, ?, ?)",
-      today(), title, t.details, t.minutes, t.milestone_id,
+    await run(
+      "INSERT INTO tasks (user_id, date, title, details, minutes, milestone_id) VALUES ($1, $2, $3, $4, $5, $6)",
+      uid, today(), title, t.details, t.minutes, t.milestone_id,
     );
   }
-  run("UPDATE tasks SET carried = 1 WHERE date = ? AND done = 0", yesterday);
+  await run("UPDATE tasks SET carried = true WHERE user_id = $1 AND date = $2 AND NOT done", uid, yesterday);
 }
 
-async function planWeek(profile) {
+async function planWeek(uid, profile) {
   const DAYS = 7;
-  const milestones = getMilestones();
-  const startWeek = currentWeekNumber(profile);
+  const milestones = await getMilestones(uid);
+  const startWeek = await currentWeekNumber(uid, profile);
   const minutes = rules.minutesFor(profile.answers.hours);
   const daysSinceStart = Math.round(
     (new Date(today() + "T00:00:00") - new Date(profile.start_date + "T00:00:00")) / 86_400_000,
   );
+  const weekOf = (d) => Math.min(Math.floor((daysSinceStart + d) / 7) + 1, milestones.length || 1);
   // Which roadmap week each of the next 7 days belongs to
   const dayLines = [];
   for (let d = 0; d < DAYS; d++) {
-    const weekNo = Math.min(Math.floor((daysSinceStart + d) / 7) + 1, milestones.length || 1);
-    const m = milestones.find((x) => x.week_number === weekNo);
-    dayLines.push(`- day_offset ${d} (${today(d)}): Week ${weekNo} — ${m ? `${m.title}: ${m.goals.join("; ")}` : "general practice"}`);
+    const m = milestones.find((x) => x.week_number === weekOf(d));
+    dayLines.push(`- day_offset ${d} (${today(d)}): Week ${weekOf(d)} — ${m ? `${m.title}: ${m.goals.join("; ")}` : "general practice"}`);
   }
 
   const plan = await aiOrRules(
-    () =>
+    async () =>
       askJSON({
+        uid,
         feature: "weekly-plan",
         tier: "fast",
-        system: withContext(profile),
+        system: await withContext(uid, profile),
         prompt: `Plan the student's next 7 days in ONE go.
 ${dayLines.join("\n")}
 
@@ -284,22 +289,21 @@ Make day 6 lighter (revision). details: 1 sentence on what "done" means.`,
   for (const day of plan.days) {
     if (day.day_offset < 0 || day.day_offset >= DAYS) continue;
     const date = today(day.day_offset);
-    if (getTasks(date).length) continue; // never overwrite a day that already has tasks
-    const weekNo = Math.min(Math.floor((daysSinceStart + day.day_offset) / 7) + 1, milestones.length || 1);
-    const milestoneId = milestones.find((m) => m.week_number === weekNo)?.id ?? null;
+    if ((await getTasks(uid, date)).length) continue; // never overwrite a day that already has tasks
+    const milestoneId = milestones.find((m) => m.week_number === weekOf(day.day_offset))?.id ?? null;
     for (const t of day.tasks) {
-      run(
-        "INSERT INTO tasks (date, title, details, minutes, milestone_id) VALUES (?, ?, ?, ?, ?)",
-        date, t.title, t.details, t.minutes, milestoneId,
+      await run(
+        "INSERT INTO tasks (user_id, date, title, details, minutes, milestone_id) VALUES ($1, $2, $3, $4, $5, $6)",
+        uid, date, t.title, t.details, t.minutes, milestoneId,
       );
     }
   }
 }
 
 // ---- 4. Evening check-in --------------------------------------------------
-export async function submitCheckin({ mood, energy, wins, blockers }) {
-  const profile = getProfile();
-  const tasks = getTasks(today());
+export async function submitCheckin(uid, { mood, energy, wins, blockers }) {
+  const profile = await getProfile(uid);
+  const tasks = await getTasks(uid, today());
   const doneCount = tasks.filter((t) => t.done).length;
   const wroteSomething = Boolean(wins.trim() || blockers.trim());
 
@@ -307,11 +311,12 @@ export async function submitCheckin({ mood, energy, wins, blockers }) {
   const result = !wroteSomething
     ? { reply: rules.checkinReply(profile, tasks, mood), new_memories: [], source: "rules" }
     : await aiOrRules(
-        () =>
+        async () =>
           askJSON({
+            uid,
             feature: "checkin",
             tier: "fast",
-            system: withContext(profile),
+            system: await withContext(uid, profile),
             prompt: `The student just did their evening check-in.
 Tasks done today: ${doneCount}/${tasks.length}
 ${tasks.map((t) => `- [${t.done ? "x" : " "}] ${t.title}`).join("\n")}
@@ -326,56 +331,59 @@ Blockers / excuses: ${blockers || "(nothing written)"}
         () => ({ reply: rules.checkinReply(profile, tasks, mood), new_memories: [] }),
       );
 
-  run(
-    `INSERT INTO checkins (date, mood, energy, wins, blockers, coach_reply)
-     VALUES (?, ?, ?, ?, ?, ?)
-     ON CONFLICT(date) DO UPDATE SET mood = excluded.mood, energy = excluded.energy,
+  await run(
+    `INSERT INTO checkins (user_id, date, mood, energy, wins, blockers, coach_reply)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (user_id, date) DO UPDATE SET mood = excluded.mood, energy = excluded.energy,
        wins = excluded.wins, blockers = excluded.blockers, coach_reply = excluded.coach_reply`,
-    today(), mood, energy, wins, blockers, result.reply,
+    uid, today(), mood, energy, wins, blockers, result.reply,
   );
-  for (const fact of result.new_memories) run("INSERT INTO memories (fact) VALUES (?)", fact);
+  for (const fact of result.new_memories) await run("INSERT INTO memories (user_id, fact) VALUES ($1, $2)", uid, fact);
   return result;
 }
 
 // ---- 5. Chat --------------------------------------------------------------
-export async function chat(userText, onText) {
-  const profile = getProfile();
-  run("INSERT INTO messages (role, content) VALUES ('user', ?)", userText);
-  const saveReply = (reply) => run("INSERT INTO messages (role, content) VALUES ('assistant', ?)", reply);
+export async function chat(uid, userText, onText) {
+  const profile = await getProfile(uid);
+  await run("INSERT INTO messages (user_id, role, content) VALUES ($1, 'user', $2)", uid, userText);
+  const saveReply = (reply) => run("INSERT INTO messages (user_id, role, content) VALUES ($1, 'assistant', $2)", uid, reply);
 
   // 1. Library: "explain recursion" asked before? Reuse the saved answer (free)
   const cacheKey = library.isCacheableQuestion(userText) ? library.explanationKey(userText, profile.language) : null;
-  const saved = cacheKey && library.findExplanation(cacheKey);
+  const saved = cacheKey && (await library.findExplanation(cacheKey));
   if (saved) {
     onText(saved);
-    saveReply(saved);
+    await saveReply(saved);
     return { reply: saved, source: "library" };
   }
 
   // 2. AI — with only the last 8 messages (plus the short memory) to keep it cheap
-  const history = all("SELECT role, content FROM messages ORDER BY id DESC LIMIT 8").reverse();
+  const history = (
+    await all("SELECT role, content FROM messages WHERE user_id = $1 ORDER BY id DESC LIMIT 8", uid)
+  ).reverse();
   while (history.length && history[0].role !== "user") history.shift(); // must start with the user
   let streamed = false;
   try {
     const reply = await streamText({
+      uid,
       feature: "chat",
       tier: "fast",
-      system: withContext(profile),
+      system: await withContext(uid, profile),
       messages: history,
       onText: (piece) => {
         streamed = true;
         onText(piece);
       },
     });
-    saveReply(reply);
-    if (cacheKey) library.saveExplanation(cacheKey, userText, reply);
+    await saveReply(reply);
+    if (cacheKey) await library.saveExplanation(cacheKey, userText, reply);
     return { reply, source: "ai" };
   } catch (err) {
     if (!(err instanceof AIUnavailable)) throw err;
     // 3. Rules: offline reply that still points to the next task
-    const reply = rules.offlineChatReply(profile, err.message);
+    const reply = await rules.offlineChatReply(uid, profile, err.message);
     onText((streamed ? "\n\n" : "") + reply);
-    saveReply(reply);
+    await saveReply(reply);
     return { reply, source: "rules" };
   }
 }
@@ -384,20 +392,24 @@ export async function chat(userText, onText) {
 // Numbers, grade, wins and problems are calculated by rules (free).
 // The AI only writes the headline + a personal letter, and refreshes
 // the coach's memory summary at the same time (one call, two jobs).
-export async function generateWeeklyReport() {
-  const profile = getProfile();
+export async function generateWeeklyReport(uid) {
+  const profile = await getProfile(uid);
   if (!profile) return null;
-  const week = currentMilestone(profile);
-  const next = getMilestones().find((m) => m.week_number === (week?.week_number ?? 0) + 1) ?? week;
-  const n = rules.weeklyNumbers(profile, next);
-  const checkins = all("SELECT date, wins, blockers FROM checkins WHERE date >= ? ORDER BY date", today(-6));
+  const week = await currentMilestone(uid, profile);
+  const next = (await getMilestones(uid)).find((m) => m.week_number === (week?.week_number ?? 0) + 1) ?? week;
+  const n = await rules.weeklyNumbers(uid, profile, next);
+  const checkins = await all(
+    "SELECT date, wins, blockers FROM checkins WHERE user_id = $1 AND date >= $2 ORDER BY date",
+    uid, today(-6),
+  );
 
   const written = await aiOrRules(
-    () =>
+    async () =>
       askJSON({
+        uid,
         feature: "weekly-report",
         tier: "smart",
-        system: withContext(profile),
+        system: await withContext(uid, profile),
         prompt: `Write the personal part of the student's weekly report. The numbers are already calculated:
 - Tasks: ${n.done}/${n.total} (${n.completion}%), check-ins: ${n.checkinDays}/${n.days} day(s), avg mood: ${n.avgMood ?? "n/a"}, grade: ${n.grade}
 - Wins: ${n.wins.join("; ")}
@@ -408,7 +420,7 @@ Return:
 - headline: one punchy line (under 12 words).
 - coach_letter: a personal note (80-130 words) in your voice. Be honest about the grade.
 - memory_summary: rewrite the coach's running summary of this student (under 100 words): who they are, goal, patterns, progress so far.
-  Previous summary: ${getMemorySummary() || "(none)"}`,
+  Previous summary: ${profile.memory_summary || "(none)"}`,
         schema: obj({ headline: str, coach_letter: str, memory_summary: str }),
       }),
     () => ({
@@ -417,7 +429,7 @@ Return:
       memory_summary: "",
     }),
   );
-  setMemorySummary(written.memory_summary);
+  await setMemorySummary(uid, written.memory_summary);
 
   const report = {
     headline: written.headline,
@@ -429,6 +441,18 @@ Return:
     coach_letter: written.coach_letter,
     source: written.source,
   };
-  run("INSERT INTO reports (week_start, content) VALUES (?, ?)", today(-6), JSON.stringify(report));
+  await run("INSERT INTO reports (user_id, week_start, content) VALUES ($1, $2, $3)", uid, today(-6), JSON.stringify(report));
   return report;
+}
+
+// ---- 7. App-open greeting -------------------------------------------------
+// Counts this student's app opens and returns the next funny line.
+// UPDATE … RETURNING bumps the counter and reads it in one query.
+export async function nextGreeting(uid) {
+  const row = await get(
+    "UPDATE profiles SET app_opens = app_opens + 1 WHERE user_id = $1 RETURNING app_opens, name, language",
+    uid,
+  );
+  if (!row) return null;
+  return { count: row.app_opens, message: greeting(row.language, row.app_opens, row.name) };
 }

@@ -2,13 +2,15 @@
   "name": "life-coach",
   "version": "1.0.0",
   "private": true,
-  "description": "Personal AI career coach: onboarding, roadmap, daily tasks, check-ins, chat, reports, notifications",
+  "description": "Personal AI career coach: email OTP sign-in, onboarding, roadmap, daily tasks, check-ins, chat, reports, notifications",
   "scripts": {
     "postinstall": "npm install --prefix server && npm install --prefix client",
     "dev": "concurrently -n api,web -c blue,magenta \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
     "build": "npm run build --prefix client",
     "start": "npm run build && npm start --prefix server",
-    "models": "npm run models --prefix server"
+    "models": "npm run models --prefix server",
+    "doctor": "npm run doctor --prefix server",
+    "db:setup": "npm run db:setup --prefix server"
   },
   "engines": {
     "node": ">=22.13"

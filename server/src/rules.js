@@ -11,6 +11,7 @@
 // =============================================================
 import { all, get, today } from "./db.js";
 import { getStreak, getDailyStats, getTasks } from "./state.js";
+import { morningNote } from "./messages.js";
 
 // Answer to "How many hours a day?" -> minutes per day
 export const MINUTES_PER_DAY = {
@@ -54,9 +55,13 @@ export function baselineScores(answers, quizScore) {
 }
 
 // Live scores: recalculated from your real behaviour every time you open the app
-export function liveScores(profile) {
+export async function liveScores(uid, profile) {
   const baseline = Object.fromEntries(profile.assessment.scores.map((s) => [s.name, s.value]));
-  const stats = getDailyStats(14);
+  const [stats, streak, doneRow] = await Promise.all([
+    getDailyStats(uid, 14),
+    getStreak(uid),
+    get("SELECT COUNT(*) AS n FROM tasks WHERE user_id = $1 AND done", uid),
+  ]);
   const daysSinceStart = Math.round((new Date(today() + "T00:00:00") - new Date(profile.start_date + "T00:00:00")) / 86_400_000) + 1;
   const window = Math.min(14, daysSinceStart);
   const recent = stats.slice(-window);
@@ -66,7 +71,7 @@ export function liveScores(profile) {
   const tasksDone = recent.reduce((s, d) => s + d.done, 0);
   const moods = stats.slice(-7).map((d) => d.mood).filter((m) => m != null);
   const avgMood = moods.length ? moods.reduce((a, b) => a + b, 0) / moods.length : null;
-  const doneEver = get("SELECT COUNT(*) AS n FROM tasks WHERE done = 1").n;
+  const doneEver = doneRow.n;
 
   return [
     {
@@ -77,7 +82,7 @@ export function liveScores(profile) {
     {
       name: "Consistency",
       value: tasksTotal || checkinDays ? pct(checkinDays, window) : baseline.Consistency ?? 50,
-      reason: `Checked in ${checkinDays} of the last ${window} day(s). Streak: ${getStreak()}.`,
+      reason: `Checked in ${checkinDays} of the last ${window} day(s). Streak: ${streak}.`,
     },
     {
       name: "Focus & discipline",
@@ -113,11 +118,12 @@ export function gradeFor(completion, checkinDays, days = 7) {
   return "F";
 }
 
-export function weeklyNumbers(profile, nextMilestone) {
+export async function weeklyNumbers(uid, profile, nextMilestone) {
   // A new student hasn't had 7 days yet — only count the days since they started
   const daysSinceStart = Math.round((new Date(today() + "T00:00:00") - new Date(profile.start_date + "T00:00:00")) / 86_400_000) + 1;
   const days = Math.max(1, Math.min(7, daysSinceStart));
-  const stats = getDailyStats(days);
+  const stats = await getDailyStats(uid, days);
+  const streak = await getStreak(uid);
   const total = stats.reduce((s, d) => s + d.total, 0);
   const done = stats.reduce((s, d) => s + d.done, 0);
   const completion = pct(done, total);
@@ -126,13 +132,15 @@ export function weeklyNumbers(profile, nextMilestone) {
   const avgMood = moods.length ? +(moods.reduce((a, b) => a + b, 0) / moods.length).toFixed(1) : null;
   const best = [...stats].filter((d) => d.done).sort((a, b) => b.done / b.total - a.done / a.total)[0];
   const zeroDays = stats.filter((d) => d.total && d.done === 0).length;
-  const blockers = all("SELECT blockers FROM checkins WHERE date >= ? AND blockers != ''", today(-6)).map((r) => r.blockers);
+  const blockers = (
+    await all("SELECT blockers FROM checkins WHERE user_id = $1 AND date >= $2 AND blockers <> '' ORDER BY date", uid, today(-6))
+  ).map((r) => r.blockers);
 
   const wins = [];
   if (done) wins.push(`Completed ${done} of ${total} tasks (${completion}%).`);
   if (checkinDays >= Math.ceil(days * 0.7)) wins.push(`Checked in on ${checkinDays} of ${days} day(s).`);
   if (best) wins.push(`Best day: ${best.date} (${best.done}/${best.total} tasks).`);
-  if (getStreak() >= 3) wins.push(`Current streak: ${getStreak()} days.`);
+  if (streak >= 3) wins.push(`Current streak: ${streak} days.`);
   if (!wins.length) wins.push("You opened the app — that's the first step.");
 
   const problems = [];
@@ -179,21 +187,11 @@ export function checkinReply(profile, tasks, mood) {
   return reply;
 }
 
-const MORNING = {
-  gentle: ["Good morning {name} ☀️ Today: {first}. One step at a time."],
-  balanced: ["Morning {name}. Today's plan: {first} + {more} more. Let's go."],
-  strict: ["Up, {name}. {first} — done before noon. {more} more after that."],
-};
+// The line above today's tasks: the same funny morning messages as the
+// notification, in the student's own language (see messages.js)
 export function morningMessage(profile, tasks) {
-  if (!tasks.length) return `Morning ${profile.name}! Open the app to see today's plan.`;
-  return say(MORNING, profile.coach_style, { name: profile.name, first: tasks[0].title, more: Math.max(tasks.length - 1, 0) });
+  return morningNote(profile, tasks);
 }
-
-export const NUDGES = {
-  gentle: "Hey, you haven't checked in today. Even 2 minutes counts 💛",
-  balanced: "No check-in yet today. Open the app and tell me how it went.",
-  strict: "Still no check-in? Discipline isn't optional. Open the app. Now.",
-};
 
 const LETTERS = {
   gentle: "You showed up this week, {name}. {completion}% of tasks done — every bit counts. Next week, let's protect one focused hour every day.",
@@ -206,8 +204,8 @@ export function weeklyLetter(profile, n) {
     ({ name: profile.name, completion: n.completion, checkins: `${n.checkinDays}/${n.days}`, grade: n.grade, fix: n.problems[0] })[k] ?? "");
 }
 
-export function offlineChatReply(profile, reason) {
-  const tasks = getTasks(today());
+export async function offlineChatReply(uid, profile, reason) {
+  const [tasks, streak] = await Promise.all([getTasks(uid, today()), getStreak(uid)]);
   const left = tasks.filter((t) => !t.done);
   const lines = [
     `(Coach is in offline mode — ${reason})`,
@@ -215,7 +213,7 @@ export function offlineChatReply(profile, reason) {
     left.length
       ? `Here's what matters right now, ${profile.name}: "${left[0].title}"${left.length > 1 ? ` and ${left.length - 1} more task(s)` : ""}.`
       : `All of today's tasks are done, ${profile.name}. Great work — rest or revise.`,
-    `Streak: ${getStreak()} day(s). Do the next task, then come back and check in.`,
+    `Streak: ${streak} day(s). Do the next task, then come back and check in.`,
   ];
   return lines.join("\n");
 }

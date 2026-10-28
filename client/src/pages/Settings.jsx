@@ -1,16 +1,18 @@
 // =============================================================
-// Settings.jsx — appearance, AI usage & budget, notifications, reset
+// Settings.jsx — account (sign out), appearance, AI usage & budget,
+//                notifications, reset
 // =============================================================
 import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import {
   DesktopIcon, SunIcon, MoonIcon, CoinsIcon, BellIcon, ArrowCounterClockwiseIcon, BooksIcon, PaletteIcon,
+  UserCircleIcon, SignOutIcon,
 } from "@phosphor-icons/react";
 import { api, enableNotifications } from "../api.js";
 import { getTheme, setTheme } from "../theme.js";
 import { Page, Card, Reveal, Button, AnimatedNumber, spring, softSpring } from "../components.jsx";
 
-export default function Settings({ onReset }) {
+export default function Settings({ email, onSignOut, onReset }) {
   const [msg, setMsg] = useState("");
   const [confirming, setConfirming] = useState(false);
 
@@ -40,6 +42,8 @@ export default function Settings({ onReset }) {
         <span className="label">App</span>
         <h1 className="display">Settings</h1>
       </Reveal>
+
+      <AccountCard email={email} onSignOut={onSignOut} />
 
       <Card>
         <div className="card-head">
@@ -87,6 +91,37 @@ export default function Settings({ onReset }) {
         </div>
       </Card>
     </Page>
+  );
+}
+
+// Who's signed in + the Sign out button
+function AccountCard({ email, onSignOut }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Card>
+      <div className="card-head">
+        <span className="card-title"><UserCircleIcon size={18} weight="bold" /> Account</span>
+      </div>
+      <div className="account">
+        <span className="account-avatar" aria-hidden>{(email ?? "?")[0].toUpperCase()}</span>
+        <div className="account-text">
+          <span className="label">Signed in as</span>
+          <strong>{email}</strong>
+        </div>
+        <Button
+          onClick={async () => {
+            setBusy(true);
+            await onSignOut();
+          }}
+          disabled={busy}
+        >
+          <SignOutIcon size={16} weight="bold" /> {busy ? "Signing out…" : "Sign out"}
+        </Button>
+      </div>
+      <p className="faint" style={{ fontSize: "0.83rem", marginTop: 12 }}>
+        You stay signed in on this device until you sign out. Your plan and chats are saved to your account.
+      </p>
+    </Card>
   );
 }
 

@@ -11,29 +11,29 @@ Read this with the code open next to you. Every concept points to the exact file
 | **Menu & waiter**: what you see and touch | **Frontend** (React): screens, buttons, forms | `client/src/` |
 | **Order slip** passed to the kitchen | **API request** (HTTP + JSON) | `client/src/api.js` |
 | **Kitchen**: does the real work | **Backend** (Node.js + Express) | `server/src/` |
-| **Storeroom + register**: remembers everything | **Database** (SQLite) | `server/src/db.js` |
+| **Storeroom + register**: remembers everything | **Database** (Postgres on Supabase) | `server/src/db.js`, `server/db/schema.sql` |
+| **Bouncer at the door** checking ID cards | **Sign-in** (Supabase Auth + token check) | `client/src/supabase.js`, `server/src/auth.js` |
 | **Expert consultant** the kitchen phones | **AI** (via OpenRouter, OpenAI, Gemini or Claude) | `server/src/ai.js` + `providers/` |
 | **Alarm clock** in the kitchen | **Scheduler** (cron jobs) | `server/src/scheduler.js` |
 
 ```
  ┌───────────── YOUR BROWSER / PHONE ─────────────┐
- │  React app (pages, buttons)                    │
- │  Service worker (shows notifications)          │
- └───────┬────────────────────────────▲───────────┘
-         │ HTTP request               │ JSON response
-         │ e.g. PATCH /api/tasks/4    │ e.g. {"id":4,"done":1}
- ┌───────▼────────────────────────────┴───────────┐
- │  Express server (Node.js)          :3001       │
- │   routes/ → coach.js → state.js / ai.js        │
- │   scheduler.js (runs on a clock) → push.js     │
+ │  React app (pages, buttons)                    │──── sign in (email + code) ───┐
+ │  Service worker (shows notifications)          │◄─── session (tokens) ─────────┤
+ └───────┬────────────────────────────▲───────────┘                              │
+         │ HTTP request + token       │ JSON response                            │
+         │ PATCH /api/tasks/4         │ {"id":4,"done":true}                     │
+ ┌───────▼────────────────────────────┴───────────┐                     ┌────────▼────────┐
+ │  Express server (Node.js)          :3001       │  "is this token     │ Supabase Auth   │
+ │   auth.js (who are you?) → routes/ → coach.js  │── real?" (keys) ───►│ (emails codes)  │
+ │   scheduler.js (runs on a clock) → push.js     │                     └─────────────────┘
  └───────┬──────────────────────┬─────────────────┘
-         │ SQL                  │ HTTPS
-   ┌─────▼──────┐        ┌──────▼──────┐
-   │  SQLite DB │        │ OpenAI /    │
-   │            │        │ Gemini /    │
-   │            │        │ Claude API  │
-   │ (one file) │        │ (Anthropic) │
-   └────────────┘        └─────────────┘
+         │ SQL (DB password)    │ HTTPS (API key)
+   ┌─────▼──────────────┐ ┌─────▼──────────────┐
+   │ Postgres database  │ │ AI: OpenRouter /   │
+   │ on Supabase        │ │ OpenAI / Gemini /  │
+   │ (Mumbai, in cloud) │ │ Claude             │
+   └────────────────────┘ └────────────────────┘
 ```
 
 **The golden rule:** the frontend NEVER talks to the database or the AI directly.
@@ -53,10 +53,11 @@ setData(...)   // tick the box on screen immediately ("optimistic update")
 await api(`/tasks/${task.id}`, { method: "PATCH", body: { done: true } });
 ```
 
-**② `api.js` sends an HTTP request**
+**② `api.js` sends an HTTP request** (with your sign-in token attached)
 ```
 PATCH /api/tasks/4
 Content-Type: application/json
+Authorization: Bearer eyJhbGciOiJFUzI1NiIs…
 
 {"done": true}
 ```
@@ -66,19 +67,23 @@ Content-Type: application/json
 **③ Express receives it** (`server/src/index.js`)
 - `express.json()` middleware turns the JSON text into a JS object → `req.body.done === true`
 - Our logger middleware prints `PATCH /api/tasks/4` in your terminal. Watch for it!
+- `requireUser` (`server/src/auth.js`) checks the token → `req.user.id` = your user id. No/bad token? `401`, and the app shows the sign-in screen.
 - Express finds the matching route.
 
 **④ The route validates and updates** (`server/src/routes/daily.js`)
 ```js
-router.patch("/tasks/:id", (req, res) => {
+router.patch("/tasks/:id", async (req, res) => {
   if (typeof req.body.done !== "boolean") return res.status(400)...  // reject bad input
-  run("UPDATE tasks SET done = ?, done_at = ? WHERE id = ?", 1, now, 4);
-  ...
-  res.json(updatedTask);   // send back the result
+  const task = await get(
+    "UPDATE tasks SET done = $1, done_at = $2 WHERE id = $3 AND user_id = $4 RETURNING *",
+    true, now, 4, req.user.id,              // "AND user_id": you can only tick YOUR tasks
+  );
+  if (!task) return res.status(404)...      // not yours / doesn't exist
+  res.json(task);                           // send back the result
 });
 ```
 
-**⑤ SQLite saves it to disk** in `server/data/lifecoach.db`.
+**⑤ Postgres saves it** in your Supabase database (in the cloud, so it works from any device). `await` waits for the database to answer over the network.
 
 **⑥ The response travels back.** Status `200 OK` with the updated task as JSON.
 
@@ -122,11 +127,13 @@ If anything fails, the error flows back the same way and React shows it in red.
 
 | Method | URL | Does |
 |---|---|---|
-| GET | `/api/onboarding/questions` | Returns the 12 questions |
+| GET | `/api/config` | Public: Supabase URL + publishable key (for the sign-in screen) |
+| GET | `/api/onboarding/questions` | Public: the 12 questions |
+| POST | `/api/hello` | Counts an app open, returns the next funny hello |
 | POST | `/api/onboarding/quiz` | AI creates a 5-question level test |
 | POST | `/api/onboarding/complete` | AI scores you + builds a 12-week roadmap |
-| GET | `/api/profile` | Your profile + roadmap |
-| DELETE | `/api/profile` | Wipe everything |
+| GET | `/api/profile` | Your profile + roadmap (`404` = first time → onboarding) |
+| DELETE | `/api/profile` | Wipe YOUR data |
 | GET | `/api/dashboard` | Everything for the Today screen |
 | GET | `/api/tasks/today` | Today's tasks (AI generates them if missing) |
 | PATCH | `/api/tasks/:id` | Mark a task done/undone |
@@ -138,9 +145,9 @@ If anything fails, the error flows back the same way and React shows it in red.
 **Try it yourself:** with the server running, open http://localhost:3001/api/dashboard in your browser. That raw JSON is exactly what React receives.
 
 **Status codes** we use:
-`200` OK · `201` Created · `204` No content · `400` Your input is wrong · `404` Not found · `429` Too many requests · `500` Server broke · `502` A service we depend on (the AI) broke
+`200` OK · `201` Created · `204` No content · `400` Your input is wrong · `401` Not signed in · `404` Not found · `429` Too many requests · `500` Server broke · `502` A service we depend on (the AI) broke
 
-**Middleware** runs on every request before your route: `express.json()` parses the body, and our logger prints each request. The **error handler** (last `app.use` in `index.js`) catches any error thrown anywhere and turns it into a clean JSON message.
+**Middleware** runs on every request before your route: `express.json()` parses the body, our logger prints each request, and `requireUser` checks who you are. Order matters: routes added BEFORE `app.use("/api", requireUser)` in `index.js` are public; everything after needs a sign-in. The **error handler** (last `app.use` in `index.js`) catches any error thrown anywhere and turns it into a clean JSON message.
 
 **Validation**: never trust the client. See `validateAnswers()` in `routes/onboarding.js` and the mood range check in `routes/daily.js`.
 
@@ -153,44 +160,88 @@ coach.js  → "what the feature does"                     (business logic)
 state.js  → "read & compute data"                       (queries)
 ai.js     → "talk to the AI" (picks a provider)         (external service)
 providers/→ "how to talk to OpenRouter / OpenAI / Gemini / Claude specifically"
-db.js     → "the database connection + tables"          (storage)
+auth.js   → "who is asking?"                            (security)
+db.js     → "the database connection"                   (storage)
 ```
 
 ---
 
-## 5. Database concepts (SQL) — `server/src/db.js`
+## 5. Database concepts (SQL + Postgres) — `server/db/schema.sql`, `server/src/db.js`
 
-A database = tables (like Excel sheets) with strict columns.
+A database = tables (like Excel sheets) with strict columns. Ours is **PostgreSQL**, hosted by **Supabase**
+(in Mumbai), so it's online 24/7 and the same data shows up on your phone and laptop.
 
 ```
-profile (1 row)        milestones (12 rows)          tasks (many rows)
-┌────────────┐         ┌──────────────────┐          ┌─────────────────────┐
-│ id = 1     │         │ id  (PK)         │◄─────────│ milestone_id (FK)   │
-│ name       │         │ week_number      │  one     │ id  (PK)            │
-│ answers    │         │ title, focus     │  week →  │ date, title, done   │
-│ assessment │         │ goals            │  many    └─────────────────────┘
-└────────────┘         └──────────────────┘  tasks
-checkins (one per day: UNIQUE date) · messages (chat) · memories (facts about you)
-reports (weekly) · push_subscriptions (devices) · settings (key/value)
+auth.users (Supabase)   profiles (1 row per student)    milestones (12 per student)    tasks (many)
+┌───────────────┐       ┌──────────────────┐            ┌──────────────────┐           ┌─────────────────────┐
+│ id (uuid, PK) │◄──────│ user_id (PK, FK) │            │ id (PK)          │◄──────────│ milestone_id (FK)   │
+│ email         │◄──┐   │ name, answers    │            │ user_id (FK)     │           │ user_id (FK)        │
+└───────────────┘   │   │ language         │            │ week_number      │           │ date, title, done   │
+                    │   │ app_opens        │            │ goals (jsonb)    │           └─────────────────────┘
+                    └───┴──────────────────┴── every per-student table has user_id → auth.users
+checkins (UNIQUE user_id + date) · messages · memories · reports · push_subscriptions · ai_usage
+shared (no user_id): question_bank · roadmap_templates · explanations · app_settings
 ```
 
 | Concept | Meaning | Example in our code |
 |---|---|---|
-| **Primary key (PK)** | Unique ID of each row | `id INTEGER PRIMARY KEY AUTOINCREMENT` |
-| **Foreign key (FK)** | A column pointing at another table's PK | `tasks.milestone_id REFERENCES milestones(id)` |
-| **One-to-many** | One week has many tasks | milestones → tasks |
-| **Constraints** | Rules the DB enforces | `UNIQUE` date on checkins, `CHECK (role IN (...))` |
-| **Index** | Makes lookups fast (like a book index) | `idx_tasks_date` |
+| **Primary key (PK)** | Unique ID of each row | `id bigint generated always as identity primary key` |
+| **Foreign key (FK)** | A column pointing at another table's PK | `tasks.user_id references auth.users (id)` |
+| **ON DELETE CASCADE** | Delete a user → all their rows go too | every `user_id` column |
+| **One-to-many** | One student has many tasks | users → tasks |
+| **Constraints** | Rules the DB enforces | `unique (user_id, date)` on checkins, `check (mood between 1 and 10)` |
+| **Index** | Makes lookups fast (like a book index) | `tasks_user_date` on `(user_id, date)` |
+| **jsonb** | A column that stores JSON (lists, objects) | `answers`, `goals`, `assessment` |
 | **CRUD** | Create/Read/Update/Delete = INSERT/SELECT/UPDATE/DELETE | everywhere |
-| **Aggregation** | Summarize many rows | `COUNT(*)`, `SUM(done)`, `GROUP BY date` in `getDailyStats()` |
-| **Upsert** | Insert, or update if it exists | `ON CONFLICT(date) DO UPDATE` in check-ins |
-| **Transaction** | Several changes that ALL succeed or ALL fail | `BEGIN … COMMIT / ROLLBACK` in `completeOnboarding()` |
-| **SQL injection prevention** | Never glue user text into SQL; use `?` placeholders | every `run(...)` / `all(...)` call |
+| **Aggregation** | Summarize many rows | `COUNT(*) FILTER (WHERE done)`, `GROUP BY date` in `getDailyStats()` |
+| **Upsert** | Insert, or update if it exists | `ON CONFLICT (user_id, date) DO UPDATE` in check-ins |
+| **RETURNING** | Change a row AND get it back in one query | `UPDATE profiles SET app_opens = app_opens + 1 … RETURNING app_opens` |
+| **Transaction** | Several changes that ALL succeed or ALL fail | `transaction()` in `completeOnboarding()` |
+| **Connection pool** | A few open connections, shared by all requests (opening one is slow) | `new pg.Pool()` in `db.js` |
+| **SQL injection prevention** | Never glue user text into SQL; use `$1, $2…` placeholders | every `run(...)` / `all(...)` call |
 
-**Look inside your database:** install the VS Code extension **"SQLite Viewer"** and open `server/data/lifecoach.db`. You'll see your rows grow as you use the app.
+**Look inside your database:** Supabase dashboard → **Table Editor**. You'll see your rows appear as you use the app.
+Or **SQL Editor** → try `select name, app_opens from profiles;`
 
-> SQLite vs PostgreSQL: same SQL, same concepts. SQLite is one file, which is perfect for one person.
-> When you deploy for many users, you switch to PostgreSQL and the queries barely change.
+---
+
+## 5b. Sign-in & security — `client/src/supabase.js`, `server/src/auth.js`
+
+**How "email + code" sign-in works (OTP = one-time password):**
+```
+You: aniruth@gmail.com → [Send code]
+  React ──signInWithOtp──► Supabase Auth ──email (via your Gmail SMTP)──► your inbox: 482913
+You: 482913 → [Verify]
+  React ──verifyOtp──► Supabase Auth: "code matches!" ──► SESSION
+                                                           ├─ access token  (a JWT, valid 1 hour)
+                                                           └─ refresh token (gets a new access token)
+```
+supabase-js saves the session in the browser (`localStorage`) and refreshes it automatically,
+so you **stay signed in until you press Sign out**. That's why the app opens straight away next time.
+
+**What's a JWT?** A token with three parts, `header.payload.signature`. The payload says
+`{"sub": "your-user-id", "email": "…", "exp": <expiry time>}`. Supabase **signs** it with a private key.
+Anyone can read it, but nobody can change it without breaking the signature.
+
+**How the server trusts it** (`auth.js`):
+1. Every API call sends `Authorization: Bearer <token>` (`api.js` adds it).
+2. `requireUser` downloads Supabase's **public** keys once (the "JWKS") and checks the signature + expiry.
+3. Valid → `req.user = { id, email }`. Invalid/expired → `401` → the app signs you out.
+
+**Who sees what?** Every query has `WHERE user_id = $1` with `req.user.id`, so Ravi can never read
+Aniruth's chats, even by guessing a task id. On top of that, **Row Level Security (RLS)** is ON for every
+table with **no policies**, so the browser's public key can't read any table directly. Only our server,
+which connects with the database password, can.
+
+**First time vs returning:** after sign-in, the app calls `GET /api/profile`.
+`404` → no profile yet → show the 12 questions. `200` → straight into the app.
+
+| Secret? | Where it lives |
+|---|---|
+| Supabase URL + **publishable** key | Public. Safe in the browser (it can only do sign-in). |
+| `DATABASE_URL` (DB password) | **Secret.** `server/.env` only. |
+| `OPENROUTER_API_KEY` | **Secret.** `server/.env` only. |
+| Gmail app password | **Secret.** Supabase dashboard (SMTP settings) only. |
 
 ---
 
@@ -257,10 +308,19 @@ Normally code only runs when a request comes in. **Cron jobs** run on a clock (`
 
 | When | Job |
 |---|---|
-| `MORNING_TIME` (07:30) | AI plans your day → notification with your tasks |
-| `EVENING_TIME` (21:00) | "Check-in time — you finished X/Y tasks" |
-| `NUDGE_TIME` (22:30) | If no check-in yet: a nudge (strict mode is… strict) |
-| Sunday 20:00 | Weekly report → notification with your grade |
+| `MORNING_TIME` (07:30) | Plans your day → "Smooth start chesava master uu? First: …" |
+| `EVENING_TIME` (21:00) | "Em sangathi, entha varaku chesinav? 2/3 done 👀" |
+| `NUDGE_TIME` (22:30) | If no check-in yet: "Inka check-in cheyaledu ra 😑" |
+| Sunday 20:00 | Weekly report → "Weekly report ready ra! Grade B 👀" |
+
+Each job loops over **every student** who turned notifications on, and writes to each one in **their**
+language (`messages.js`: Tenglish, Hinglish or English). The lines rotate by day, so you don't get the
+same joke twice in a row. One student's error never stops the others (a `try/catch` per student).
+
+**The funny hello when you open the app:** `App.jsx` calls `POST /api/hello` once per app open. The server
+adds 1 to `profiles.app_opens` and returns line number *n* from the list
+(`UPDATE … SET app_opens = app_opens + 1 RETURNING app_opens`): open 1 → "Hii bro, ela unnav? 😄",
+open 2 → "Pilla em antundhi ra…", and so on. All templates, so it costs nothing.
 
 **How a notification reaches you** (`push.js` + `client/public/sw.js`):
 1. You click "Enable" → the browser asks permission.
@@ -345,8 +405,10 @@ Run `npm run dev`. Each change shows up instantly when you save.
 6. **Medium, full-stack:** let you **add your own task** (form → `POST /api/tasks` → `INSERT`).
 7. **Medium, frontend:** a mood line chart for the last 14 days on the Reports page (data is already in `/api/dashboard` → `stats`).
 8. **Hard, AI:** a "Quiz me" button that asks the AI for 5 MCQs on this week's topic and saves the score in a new `quiz_results` table.
-9. **Hard, backend:** add login (username + hashed password with `bcrypt`, sessions or JWT) so it can be deployed safely.
-10. **Hard, DevOps:** deploy it (e.g. Render/Railway) with PostgreSQL, so notifications reach your phone 24/7.
+9. **Easy, fun:** add 5 of your own lines to `GREETINGS.te` in `server/src/messages.js`. Open the app 5 times.
+10. **Medium, SQL:** in the Supabase SQL Editor, find who opened the app most: `select name, app_opens from profiles order by app_opens desc;`
+11. **Hard, full-stack:** a "Friends leaderboard" page: each student's streak (needs a new route that reads OTHER students' data carefully: only names + streaks!).
+12. **Hard, DevOps:** deploy the server (e.g. Render/Railway). The database is already online, so then notifications reach your phone 24/7.
 
 Stuck? Ask me. Bring the error message and the file you changed.
 
@@ -374,3 +436,9 @@ Stuck? Ask me. Bring the error message and the file you changed.
 - **Caching**: saving the result of expensive work so you never pay for it twice
 - **Graceful degradation**: when a part fails, the app gets simpler instead of crashing
 - **Streaming**: sending a response in pieces as it's produced
+- **OTP**: one-time password, the 6-digit code emailed to you
+- **JWT**: a signed token that proves who you are (`header.payload.signature`)
+- **Session**: access token + refresh token that keep you signed in
+- **RLS (Row Level Security)**: Postgres rules about which rows each user may read/write
+- **SMTP**: the protocol for sending email (we use Gmail's SMTP server)
+- **Connection pool**: a few reusable database connections shared by all requests

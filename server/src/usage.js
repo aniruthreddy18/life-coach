@@ -1,14 +1,16 @@
 // =============================================================
 // usage.js — COST CONTROL: track every AI call + a daily budget
 // -------------------------------------------------------------
-// Every AI call saves a row in the ai_usage table (tokens + cost).
-// Before each call, ai.js asks isOverBudget(). If today's spending
-// has reached DAILY_BUDGET_USD, the app stops paying for AI until
-// tomorrow and uses rules/templates (or a free model) instead.
+// Every AI call saves a row in ai_usage (who, tokens, cost).
+// Before each call, ai.js asks isOverBudget(uid). If THIS student's
+// spending today has reached DAILY_BUDGET_USD, the app stops paying
+// for AI for them until tomorrow and uses rules/templates (or a free
+// model) instead. Each student has their own budget, so one heavy
+// user can't use up everyone else's.
 // =============================================================
-import { all, get, run, today, getSetting, setSetting } from "./db.js";
+import { all, get, run, today } from "./db.js";
 
-// Daily limit in US dollars. 0.05 USD ≈ ₹4 a day ≈ ₹130 a month (max).
+// Daily limit per student in US dollars. 0.05 USD ≈ ₹4 a day.
 export const DAILY_BUDGET_USD = Number(process.env.DAILY_BUDGET_USD ?? 0.05);
 // Only for showing rupees in the app; change it if the rate moves.
 export const INR_PER_USD = Number(process.env.INR_PER_USD ?? 88);
@@ -39,60 +41,59 @@ export function estimateCost(model, input, output) {
   return (input * inPrice + output * outPrice) / 1_000_000;
 }
 
-export function recordUsage({ feature, model, input, output, cost }) {
+export async function recordUsage(uid, { feature, model, input, output, cost }) {
   const costUsd = cost ?? estimateCost(model, input, output);
-  run(
-    `INSERT INTO ai_usage (day, feature, model, input_tokens, output_tokens, cost_usd)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    today(), feature, model, input, output, costUsd,
+  await run(
+    `INSERT INTO ai_usage (user_id, day, feature, model, input_tokens, output_tokens, cost_usd)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    uid, today(), feature, model, input, output, costUsd,
   );
 }
 
-export function spentToday() {
-  return get("SELECT COALESCE(SUM(cost_usd), 0) AS total FROM ai_usage WHERE day = ?", today()).total;
+export async function spentToday(uid) {
+  return (await get("SELECT COALESCE(SUM(cost_usd), 0) AS total FROM ai_usage WHERE user_id = $1 AND day = $2", uid, today())).total;
 }
 
-export function isOverBudget() {
-  return DAILY_BUDGET_USD > 0 && spentToday() >= DAILY_BUDGET_USD;
+export async function isOverBudget(uid) {
+  return DAILY_BUDGET_USD > 0 && (await spentToday(uid)) >= DAILY_BUDGET_USD;
 }
 
 // Remember whether the last AI call worked, so the app can show
 // "Coach is in offline mode because…" instead of failing silently.
-export function setAIStatus(ok, reason = "") {
-  setSetting("ai_status", JSON.stringify({ ok, reason, at: new Date().toISOString() }));
+// (Only saved once the student has a profile row.)
+export async function setAIStatus(uid, ok, reason = "") {
+  await run(
+    "UPDATE profiles SET ai_status = $2 WHERE user_id = $1",
+    uid, JSON.stringify({ ok, reason, at: new Date().toISOString() }),
+  );
 }
-export function getAIStatus() {
-  const raw = getSetting("ai_status");
-  return raw ? JSON.parse(raw) : { ok: true, reason: "", at: null };
+export async function getAIStatus(uid) {
+  const row = await get("SELECT ai_status FROM profiles WHERE user_id = $1", uid);
+  return row?.ai_status ?? { ok: true, reason: "", at: null };
 }
 
-// Everything the Settings page shows about usage
-export function usageSummary() {
-  const todayRow = get(
-    `SELECT COUNT(*) AS calls, COALESCE(SUM(input_tokens), 0) AS input,
-            COALESCE(SUM(output_tokens), 0) AS output, COALESCE(SUM(cost_usd), 0) AS cost
-       FROM ai_usage WHERE day = ?`,
-    today(),
-  );
-  const last7 = all(
-    `SELECT day, COUNT(*) AS calls, SUM(cost_usd) AS cost
-       FROM ai_usage WHERE day >= ? GROUP BY day ORDER BY day`,
-    today(-6),
-  );
-  const byFeature = all(
-    `SELECT feature, COUNT(*) AS calls, SUM(cost_usd) AS cost
-       FROM ai_usage WHERE day >= ? GROUP BY feature ORDER BY cost DESC`,
-    today(-6),
-  );
-  const allTime = get("SELECT COUNT(*) AS calls, COALESCE(SUM(cost_usd), 0) AS cost FROM ai_usage");
-  return {
-    budgetUsd: DAILY_BUDGET_USD,
-    inrPerUsd: INR_PER_USD,
-    today: todayRow,
-    overBudget: isOverBudget(),
-    last7,
-    byFeature,
-    allTime,
-    aiStatus: getAIStatus(),
-  };
+// Everything the Settings page shows about this student's usage
+export async function usageSummary(uid) {
+  const [todayRow, last7, byFeature, allTime, overBudget, aiStatus] = await Promise.all([
+    get(
+      `SELECT COUNT(*) AS calls, COALESCE(SUM(input_tokens), 0) AS input,
+              COALESCE(SUM(output_tokens), 0) AS output, COALESCE(SUM(cost_usd), 0) AS cost
+         FROM ai_usage WHERE user_id = $1 AND day = $2`,
+      uid, today(),
+    ),
+    all(
+      `SELECT day, COUNT(*) AS calls, SUM(cost_usd) AS cost
+         FROM ai_usage WHERE user_id = $1 AND day >= $2 GROUP BY day ORDER BY day`,
+      uid, today(-6),
+    ),
+    all(
+      `SELECT feature, COUNT(*) AS calls, SUM(cost_usd) AS cost
+         FROM ai_usage WHERE user_id = $1 AND day >= $2 GROUP BY feature ORDER BY cost DESC`,
+      uid, today(-6),
+    ),
+    get("SELECT COUNT(*) AS calls, COALESCE(SUM(cost_usd), 0) AS cost FROM ai_usage WHERE user_id = $1", uid),
+    isOverBudget(uid),
+    getAIStatus(uid),
+  ]);
+  return { budgetUsd: DAILY_BUDGET_USD, inrPerUsd: INR_PER_USD, today: todayRow, overBudget, last7, byFeature, allTime, aiStatus };
 }

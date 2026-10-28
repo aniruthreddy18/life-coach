@@ -703,3 +703,47 @@ em { font-style: normal; } /* emphasis = colour, not italics */
   *, *::before, *::after { animation-duration: 0.001ms !important; transition-duration: 0.001ms !important; }
   html { scroll-behavior: auto; }
 }
+
+/* ---------- 16. Sign in ---------- */
+.signin .onboard-stage { max-width: 440px; width: 100%; margin: 0 auto; }
+.signin-card { gap: 18px; }
+.signin-card h1 { font-size: clamp(1.7rem, 6vw, 2.3rem); }
+.signin-icon {
+  width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center;
+  background: var(--accent); color: var(--on-accent);
+  box-shadow: 0 14px 30px -14px var(--accent-glow);
+}
+.lg-input { min-height: 54px; font-size: 1.05rem; }
+.code-input {
+  min-height: 64px; text-align: center;
+  font-size: 1.9rem; font-weight: 700; letter-spacing: 0.45em; padding-left: 0.45em;
+  font-variant-numeric: tabular-nums;
+}
+.code-input::placeholder { color: var(--surface-3); }
+
+/* ---------- 17. Account ---------- */
+.account { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.account-avatar {
+  width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
+  background: var(--accent); color: var(--on-accent); font-weight: 700; font-size: 1.1rem;
+}
+.account-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.account-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- 18. App-open greeting ---------- */
+.greeting {
+  position: fixed; z-index: 60; top: calc(12px + env(safe-area-inset-top));
+  left: 50%; translate: -50% 0; width: min(440px, calc(100% - 32px));
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 10px 16px 16px; border-radius: 18px; overflow: hidden;
+  background: var(--glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--line-strong); box-shadow: var(--shadow-lg);
+  cursor: grab; touch-action: none;
+}
+.greeting-wave { font-size: 1.7rem; display: inline-block; transform-origin: 70% 70%; }
+.greeting-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.greeting-text p { font-weight: 600; line-height: 1.35; }
+.greeting-timer {
+  position: absolute; left: 0; right: 0; bottom: 0; height: 3px;
+  background: var(--accent); transform-origin: left;
+}

@@ -5,10 +5,12 @@
 //   1. question_bank      level-test questions (built-in + AI-written)
 //   2. roadmap_templates  12-week roadmaps by topic + level + hours
 //   3. explanations       answers to "explain X" questions
-// With one student this saves a little. With 1,000 students who share
+// These tables are SHARED by all students: when the AI writes a
+// level test or roadmap for one student, everyone with the same
+// subject gets it free afterwards. With 1,000 students who share
 // goals, most requests become free database reads.
 // =============================================================
-import { all, get, run, db } from "./db.js";
+import { all, get, run, transaction } from "./db.js";
 import { BUILTIN_QUESTIONS } from "./data/questionBank.js";
 
 // ---- Topic detection ---------------------------------------------------------
@@ -40,25 +42,22 @@ export function topicKeyFor(learn) {
 }
 
 // ---- 1. Question bank --------------------------------------------------------
-// Put the built-in questions into the database once (safe to run every start)
-export function seedQuestionBank() {
-  const insert = db.prepare(
-    `INSERT OR IGNORE INTO question_bank (topic, question, options, correct_index, difficulty, source)
-     VALUES (?, ?, ?, ?, ?, 'builtin')`,
-  );
-  // One transaction for all inserts: one disk write instead of 56 (much faster)
-  db.exec("BEGIN");
-  try {
+// Put the built-in questions into the database once (safe to run every start).
+// One transaction for all inserts: one round-trip commit instead of 56.
+export async function seedQuestionBank() {
+  await transaction(async (q) => {
     for (const [topic, levels] of Object.entries(BUILTIN_QUESTIONS)) {
       for (const [difficulty, questions] of Object.entries(levels)) {
-        for (const [q, options, correct] of questions) insert.run(topic, q, JSON.stringify(options), correct, difficulty);
+        for (const [question, options, correct] of questions) {
+          await q(
+            `INSERT INTO question_bank (topic, question, options, correct_index, difficulty, source)
+             VALUES ($1, $2, $3, $4, $5, 'builtin') ON CONFLICT (topic, question) DO NOTHING`,
+            topic, question, JSON.stringify(options), correct, difficulty,
+          );
+        }
       }
     }
-    db.exec("COMMIT");
-  } catch (err) {
-    db.exec("ROLLBACK");
-    throw err;
-  }
+  });
 }
 
 const shuffle = (arr) => {
@@ -72,7 +71,7 @@ const shuffle = (arr) => {
 
 // Shuffle the options so the right answer isn't always in the same place
 function serve(row) {
-  const options = JSON.parse(row.options);
+  const options = row.options; // jsonb comes back already parsed
   const order = shuffle(options.map((_, i) => i));
   return {
     question: row.question,
@@ -82,53 +81,56 @@ function serve(row) {
   };
 }
 
-// 5 questions: 2 easy, 2 medium, 1 hard, spread across the topics
-export function pickQuestions(topics, count = 5) {
+// 5 questions: 2 easy, 2 medium, 1 hard, spread across the topics.
+// "topic = ANY($1)" means "topic is one of the values in this array".
+export async function pickQuestions(topics, count = 5) {
   const want = { easy: 2, medium: 2, hard: 1 };
   const picked = [];
   for (const [difficulty, n] of Object.entries(want)) {
-    const placeholders = topics.map(() => "?").join(",");
-    const rows = all(
-      `SELECT * FROM question_bank WHERE topic IN (${placeholders}) AND difficulty = ? ORDER BY RANDOM() LIMIT ?`,
-      ...topics, difficulty, n,
+    picked.push(
+      ...(await all(
+        "SELECT * FROM question_bank WHERE topic = ANY($1) AND difficulty = $2 ORDER BY random() LIMIT $3",
+        topics, difficulty, n,
+      )),
     );
-    picked.push(...rows);
   }
   // Not enough of one difficulty? Top up with any level.
   if (picked.length < count) {
-    const have = new Set(picked.map((r) => r.id));
-    const extra = all(
-      `SELECT * FROM question_bank WHERE topic IN (${topics.map(() => "?").join(",")}) ORDER BY RANDOM()`,
-      ...topics,
-    ).filter((r) => !have.has(r.id));
-    picked.push(...extra.slice(0, count - picked.length));
+    const extra = await all(
+      "SELECT * FROM question_bank WHERE topic = ANY($1) AND NOT (id = ANY($2)) ORDER BY random() LIMIT $3",
+      topics, picked.map((r) => r.id), count - picked.length,
+    );
+    picked.push(...extra);
   }
   return picked.slice(0, count).map(serve);
 }
 
-export function saveQuestions(topic, questions) {
+export async function saveQuestions(topic, questions) {
   const difficulties = ["easy", "easy", "medium", "medium", "hard"];
-  questions.forEach((q, i) =>
-    run(
-      `INSERT OR IGNORE INTO question_bank (topic, question, options, correct_index, difficulty, source)
-       VALUES (?, ?, ?, ?, ?, 'ai')`,
+  for (const [i, q] of questions.entries()) {
+    await run(
+      `INSERT INTO question_bank (topic, question, options, correct_index, difficulty, source)
+       VALUES ($1, $2, $3, $4, $5, 'ai') ON CONFLICT (topic, question) DO NOTHING`,
       topic, q.question, JSON.stringify(q.options), q.correct_index, difficulties[i] ?? "medium",
-    ),
-  );
+    );
+  }
 }
 
 // ---- 2. Roadmap templates ----------------------------------------------------
 export const roadmapKey = (learn, level, hours) => `${topicKeyFor(learn)}|${level}|${hours}`;
 
-export function findRoadmap(key) {
-  const row = get("SELECT roadmap FROM roadmap_templates WHERE key = ?", key);
-  if (!row) return null;
-  run("UPDATE roadmap_templates SET uses = uses + 1 WHERE key = ?", key);
-  return JSON.parse(row.roadmap);
+export async function findRoadmap(key) {
+  // UPDATE … RETURNING: bump the counter and read the row in one query
+  const row = await get("UPDATE roadmap_templates SET uses = uses + 1 WHERE key = $1 RETURNING roadmap", key);
+  return row?.roadmap ?? null;
 }
 
-export function saveRoadmap(key, roadmap) {
-  run("INSERT OR REPLACE INTO roadmap_templates (key, roadmap) VALUES (?, ?)", key, JSON.stringify(roadmap));
+export async function saveRoadmap(key, roadmap) {
+  await run(
+    `INSERT INTO roadmap_templates (key, roadmap) VALUES ($1, $2)
+     ON CONFLICT (key) DO UPDATE SET roadmap = excluded.roadmap`,
+    key, JSON.stringify(roadmap),
+  );
 }
 
 // ---- 3. Saved explanations ---------------------------------------------------
@@ -143,22 +145,25 @@ export function isCacheableQuestion(text) {
 
 export const explanationKey = (text, language) => `${language}|${normalizeKey(text)}`;
 
-export function findExplanation(key) {
-  const row = get("SELECT answer FROM explanations WHERE key = ?", key);
-  if (!row) return null;
-  run("UPDATE explanations SET hits = hits + 1 WHERE key = ?", key);
-  return row.answer;
+export async function findExplanation(key) {
+  const row = await get("UPDATE explanations SET hits = hits + 1 WHERE key = $1 RETURNING answer", key);
+  return row?.answer ?? null;
 }
 
-export function saveExplanation(key, question, answer) {
-  run("INSERT OR REPLACE INTO explanations (key, question, answer) VALUES (?, ?, ?)", key, question, answer);
+export async function saveExplanation(key, question, answer) {
+  await run(
+    `INSERT INTO explanations (key, question, answer) VALUES ($1, $2, $3)
+     ON CONFLICT (key) DO UPDATE SET answer = excluded.answer`,
+    key, question, answer,
+  );
 }
 
-export function libraryStats() {
-  return {
-    questions: get("SELECT COUNT(*) AS n FROM question_bank").n,
-    aiQuestions: get("SELECT COUNT(*) AS n FROM question_bank WHERE source = 'ai'").n,
-    roadmaps: get("SELECT COUNT(*) AS n, COALESCE(SUM(uses), 0) AS uses FROM roadmap_templates"),
-    explanations: get("SELECT COUNT(*) AS n, COALESCE(SUM(hits), 0) AS hits FROM explanations"),
-  };
+export async function libraryStats() {
+  const [q, ai, roadmaps, explanations] = await Promise.all([
+    get("SELECT COUNT(*) AS n FROM question_bank"),
+    get("SELECT COUNT(*) AS n FROM question_bank WHERE source = 'ai'"),
+    get("SELECT COUNT(*) AS n, COALESCE(SUM(uses), 0) AS uses FROM roadmap_templates"),
+    get("SELECT COUNT(*) AS n, COALESCE(SUM(hits), 0) AS hits FROM explanations"),
+  ]);
+  return { questions: q.n, aiQuestions: ai.n, roadmaps, explanations };
 }
