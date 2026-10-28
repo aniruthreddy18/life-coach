@@ -9,9 +9,7 @@
 //   AI_PROVIDER=openai     -> providers/openai.js     (GPT, direct from OpenAI)
 //   AI_PROVIDER=gemini     -> providers/gemini.js     (free tier)
 //   AI_PROVIDER=claude     -> providers/claude.js     (Opus + Haiku)
-//
-// Switching providers = changing ONE line in .env. That's the payoff
-// of keeping all AI code behind one small "interface".
+//   AI_PROVIDER=none       -> no AI at all: rules + templates only (free)
 //
 // Two patterns:
 //   1. askJSON()    -> we need DATA back (scores, a plan, tasks).
@@ -20,28 +18,80 @@
 //   2. streamText() -> we need a chat reply, shown word-by-word.
 //
 // tier: "smart" for one-time/weekly jobs, "fast" for everyday jobs.
+//
+// COST CONTROL lives here too. Every call:
+//   1. checks today's budget (usage.js) -> over budget? use the free
+//      model if one is set, otherwise refuse
+//   2. calls the provider
+//   3. records tokens + cost
+// If the AI can't be used (off, over budget, no credits, network down…)
+// we throw AIUnavailable. coach.js catches it and uses rules instead,
+// so the app keeps working.
 // =============================================================
 import * as openrouter from "./providers/openrouter.js";
 import * as openai from "./providers/openai.js";
 import * as gemini from "./providers/gemini.js";
 import * as claude from "./providers/claude.js";
+import { recordUsage, isOverBudget, setAIStatus, DAILY_BUDGET_USD } from "./usage.js";
 
-const PROVIDERS = { openrouter, openai, gemini, claude };
+const none = {
+  MODELS: { smart: "(none)", fast: "(none)" },
+  listModels: async () => [],
+};
+
+const PROVIDERS = { openrouter, openai, gemini, claude, none };
 export const PROVIDER_NAME = (process.env.AI_PROVIDER || "openrouter").toLowerCase();
 const provider = PROVIDERS[PROVIDER_NAME];
 if (!provider) {
   throw new Error(`Unknown AI_PROVIDER "${PROVIDER_NAME}" in server/.env. Use one of: ${Object.keys(PROVIDERS).join(", ")}.`);
 }
+export const AI_ENABLED = PROVIDER_NAME !== "none";
 export const MODELS = provider.MODELS;
 export const listModels = provider.listModels;
 
-export function askJSON({ system, prompt, schema, tier = "fast", effort = "low" }) {
-  return provider.askJSON({ system, prompt, schema, tier, effort });
+export class AIUnavailable extends Error {
+  constructor(reason, message) {
+    super(message);
+    this.reason = reason; // "off" | "budget" | "error"
+  }
+}
+
+// Decide which model tier to use right now (or refuse)
+function chooseTier(tier) {
+  if (!AI_ENABLED) throw new AIUnavailable("off", "AI is turned off (AI_PROVIDER=none).");
+  if (isOverBudget()) {
+    if (MODELS.free) return "free";
+    throw new AIUnavailable("budget", `Today's AI budget ($${DAILY_BUDGET_USD}) is used up. Back tomorrow!`);
+  }
+  return tier;
+}
+
+// feature = a label for the usage table ("quiz", "chat", ...)
+export async function askJSON({ feature, system, prompt, schema, tier = "fast", effort = "low" }) {
+  const useTier = chooseTier(tier);
+  try {
+    const { data, usage } = await provider.askJSON({ system, prompt, schema, tier: useTier, effort });
+    recordUsage({ feature, model: MODELS[useTier], ...usage });
+    setAIStatus(true);
+    return data;
+  } catch (err) {
+    setAIStatus(false, err.message);
+    throw new AIUnavailable("error", err.message);
+  }
 }
 
 // onText is called with each small piece of text as it arrives.
-export function streamText({ system, messages, onText, tier = "fast", effort = "low" }) {
-  return provider.streamText({ system, messages, onText, tier, effort });
+export async function streamText({ feature, system, messages, onText, tier = "fast", effort = "low" }) {
+  const useTier = chooseTier(tier);
+  try {
+    const { text, usage } = await provider.streamText({ system, messages, onText, tier: useTier, effort });
+    recordUsage({ feature, model: MODELS[useTier], ...usage });
+    setAIStatus(true);
+    return text;
+  } catch (err) {
+    setAIStatus(false, err.message);
+    throw new AIUnavailable("error", err.message);
+  }
 }
 
 // -------------------------------------------------------------

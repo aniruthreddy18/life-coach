@@ -95,6 +95,36 @@ is off, the app needs to be deployed online (that's a later phase).
 
 ---
 
+## 💰 Cost control (built for a student budget)
+
+The app is designed so AI is a small extra, not the engine. Every feature follows the same order:
+
+```
+1. LIBRARY  → already saved? reuse it            (free)
+2. AI       → only where understanding is needed (cheap "fast" model)
+3. RULES    → AI off / over budget / offline?    (free, app never breaks)
+```
+
+| Feature | How it saves money |
+|---|---|
+| Level test | 56 built-in questions (DSA, Java, JavaScript, Python, SQL, React, aptitude). AI only writes questions for other subjects, **once**, then they're saved for reuse |
+| 12-week roadmap | Saved by subject + level + hours. The next student with the same goal gets it free |
+| Daily tasks | **One** AI call plans the whole week; rules carry over unfinished tasks |
+| Scores | Calculated by rules from what you actually do (free, updates live) |
+| Check-in reply | Template reply if you write nothing; AI only when you write wins/blockers |
+| Chat | Short memory summary + last 8 messages only; "explain X" answers are saved and reused |
+| Weekly report | Numbers, grade, wins and problems by SQL; AI writes only the headline + letter |
+| Daily budget | `DAILY_BUDGET_USD` (default $0.05 ≈ ₹4/day). When reached: free model (if set) → rules mode |
+
+Settings in `server/.env`:
+```
+DAILY_BUDGET_USD=0.05          # max AI spend per day (0 = no limit)
+OPENROUTER_MODEL_FREE=         # optional ":free" model used after the budget is reached
+AI_PROVIDER=none               # no AI at all: 100% free, rules + templates only
+```
+**⚙️ Settings → AI usage & budget** in the app shows today's spend in ₹, cost per feature,
+and how much the library is reusing.
+
 ## Switching AI providers
 
 Everything AI-related goes through `server/src/ai.js`, so switching is **one line** in `server/.env`:
@@ -136,6 +166,8 @@ On OpenRouter, model names include the company: `openai/…`, `anthropic/…`, `
 | "OpenRouter couldn't use model …" | Run `npm run models` and copy an exact name into `OPENROUTER_MODEL_SMART` / `OPENROUTER_MODEL_FAST`. |
 | "Your OpenAI account has no credits left" | Add billing at platform.openai.com → Billing. |
 | "OpenAI model … isn't available to your key" | Run `npm run models` and put a listed name in `OPENAI_MODEL_SMART` / `OPENAI_MODEL_FAST`. |
+| Yellow "offline mode" banner on Today | The AI couldn't be used (reason shown). The app keeps working on rules; check your key/credits in Settings → AI usage. |
+| "Today's AI budget is used up" | Working as designed. Raise `DAILY_BUDGET_USD`, set `OPENROUTER_MODEL_FREE`, or wait until tomorrow. |
 | "Gemini free-tier limit reached" | Wait a minute (or until tomorrow for the daily limit), or switch to Claude. |
 | "Gemini model … not found" | Run `npm run models` and put a listed name in `GEMINI_MODEL_SMART` / `GEMINI_MODEL_FAST`. |
 | `node:sqlite` not found | Your Node is too old. Install the current LTS from nodejs.org. |
@@ -162,6 +194,11 @@ life-coach/
 │       │   ├── gemini.js   ← Google Gemini API calls
 │       │   └── claude.js   ← Anthropic Claude API calls
 │       ├── coach.js        ← features: quiz, assessment, tasks, check-in, chat, reports
+│       │                     (each one: library → AI → rules)
+│       ├── rules.js        ← the FREE brain: live scores, grades, templates, plans without AI
+│       ├── library.js      ← shared content library: question bank, saved roadmaps, saved explanations
+│       ├── data/questionBank.js ← 56 built-in level-test questions
+│       ├── usage.js        ← token + cost tracking, daily budget
 │       ├── questions.js    ← the onboarding questions
 │       ├── push.js         ← sends notifications
 │       ├── scheduler.js    ← timed jobs (morning, evening, nudge, Sunday report)

@@ -19,8 +19,13 @@ import { router as daily } from "./routes/daily.js";
 import { router as chat } from "./routes/chat.js";
 import { router as reports } from "./routes/reports.js";
 import { router as notifications } from "./routes/notifications.js";
+import { router as usage } from "./routes/usage.js";
 import { startScheduler } from "./scheduler.js";
 import { PROVIDER_NAME, MODELS } from "./ai.js";
+import { seedQuestionBank } from "./library.js";
+import { DAILY_BUDGET_USD } from "./usage.js";
+
+seedQuestionBank(); // load the built-in level-test questions into the database
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3001;
@@ -40,6 +45,7 @@ app.use("/api", daily);
 app.use("/api", chat);
 app.use("/api", reports);
 app.use("/api", notifications);
+app.use("/api", usage);
 app.use("/api", (req, res) => res.status(404).json({ error: "No such API route" }));
 
 // --- Serve the built React app (after `npm run build`) ---
@@ -59,6 +65,7 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, () => {
   console.log(`✅ Life Coach API running at http://localhost:${PORT}`);
-  console.log(`🤖 AI: ${PROVIDER_NAME} — smart: ${MODELS.smart}, fast: ${MODELS.fast}`);
+  console.log(`🤖 AI: ${PROVIDER_NAME} — smart: ${MODELS.smart}, fast: ${MODELS.fast}${MODELS.free ? `, free: ${MODELS.free}` : ""}`);
+  console.log(`💰 Daily AI budget: $${DAILY_BUDGET_USD} (over budget → ${MODELS.free ? "free model" : "rules mode"})`);
   startScheduler();
 });

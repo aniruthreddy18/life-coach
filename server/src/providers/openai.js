@@ -17,6 +17,7 @@ export const MODELS = {
 };
 
 const appError = (status, message) => Object.assign(new Error(message), { status });
+const usageOf = (u) => ({ input: u?.input_tokens ?? 0, output: u?.output_tokens ?? 0, cost: null });
 
 let client;
 function getClient() {
@@ -58,7 +59,7 @@ export async function askJSON({ system, prompt, schema, tier }) {
     });
     if (response.status === "incomplete") throw appError(502, "The AI's answer was cut off. Try again.");
     if (!response.output_text) throw appError(422, "The AI declined to answer that request.");
-    return JSON.parse(response.output_text);
+    return { data: JSON.parse(response.output_text), usage: usageOf(response.usage) };
   } catch (err) {
     throw friendly(err, model);
   }
@@ -76,7 +77,7 @@ export async function streamText({ system, messages, onText, tier }) {
       if (event.type === "response.output_text.delta") onText(event.delta);
     }
     const response = await stream.finalResponse();
-    return response.output_text;
+    return { text: response.output_text, usage: usageOf(response.usage) };
   } catch (err) {
     throw friendly(err, model);
   }

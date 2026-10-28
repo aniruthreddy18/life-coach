@@ -54,6 +54,8 @@ function checkStop(message) {
   if (message.stop_reason === "max_tokens") throw appError(502, "The AI's answer was cut off. Try again.");
 }
 
+const usageOf = (u) => ({ input: u?.input_tokens ?? 0, output: u?.output_tokens ?? 0, cost: null });
+
 const textOf = (message) =>
   message.content.filter((b) => b.type === "text").map((b) => b.text).join("");
 
@@ -69,7 +71,7 @@ export async function askJSON({ system, prompt, schema, tier, effort }) {
       ...fallbackOptions(model),
     });
     checkStop(message);
-    return JSON.parse(textOf(message));
+    return { data: JSON.parse(textOf(message)), usage: usageOf(message.usage) };
   } catch (err) {
     throw friendly(err);
   }
@@ -89,7 +91,7 @@ export async function streamText({ system, messages, onText, tier, effort }) {
     stream.on("text", onText);
     const message = await stream.finalMessage();
     if (message.stop_reason === "refusal") throw appError(422, "The AI declined to answer that request.");
-    return textOf(message);
+    return { text: textOf(message), usage: usageOf(message.usage) };
   } catch (err) {
     throw friendly(err);
   }

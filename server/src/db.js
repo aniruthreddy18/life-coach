@@ -110,7 +110,60 @@ db.exec(`
     key          TEXT PRIMARY KEY,
     value        TEXT NOT NULL
   );
+
+  -- ===== COST CONTROL =====
+  -- One row per AI call: what it was for, which model, how many tokens, cost
+  CREATE TABLE IF NOT EXISTS ai_usage (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    day           TEXT NOT NULL,           -- YYYY-MM-DD
+    feature       TEXT NOT NULL,           -- quiz, roadmap, tasks, chat...
+    model         TEXT NOT NULL,
+    input_tokens  INTEGER NOT NULL,
+    output_tokens INTEGER NOT NULL,
+    cost_usd      REAL NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_ai_usage_day ON ai_usage(day);
+
+  -- ===== SHARED CONTENT LIBRARY (AI writes once, everyone reuses) =====
+  -- Level-test questions: built-in ones + ones the AI wrote earlier
+  CREATE TABLE IF NOT EXISTS question_bank (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic         TEXT NOT NULL,           -- "dsa", "sql", or "custom:..." key
+    question      TEXT NOT NULL,
+    options       TEXT NOT NULL,           -- JSON array of 4 strings
+    correct_index INTEGER NOT NULL,
+    difficulty    TEXT NOT NULL,           -- easy | medium | hard
+    source        TEXT NOT NULL,           -- builtin | ai
+    UNIQUE (topic, question)
+  );
+
+  -- Roadmaps saved by (topic + level + hours) so the next student with
+  -- the same goal gets one instantly, for free
+  CREATE TABLE IF NOT EXISTS roadmap_templates (
+    key           TEXT PRIMARY KEY,
+    roadmap       TEXT NOT NULL,           -- JSON array of 12 weeks
+    uses          INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Saved answers to "explain X" questions
+  CREATE TABLE IF NOT EXISTS explanations (
+    key           TEXT PRIMARY KEY,        -- normalized question + language
+    question      TEXT NOT NULL,
+    answer        TEXT NOT NULL,
+    hits          INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
+
+// MIGRATION: databases created by older versions don't have this column yet.
+// "carried" = 1 when an unfinished task was already copied to the next day.
+try {
+  db.exec("ALTER TABLE tasks ADD COLUMN carried INTEGER NOT NULL DEFAULT 0");
+} catch {
+  // column already exists — nothing to do
+}
 
 // -------------------------------------------------------------
 // Small helpers so the rest of the code reads nicely.

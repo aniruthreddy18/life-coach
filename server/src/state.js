@@ -5,7 +5,7 @@
 // your profile, which week of the plan you're in, your streak,
 // completion rates... Both the API routes and the AI use these.
 // =============================================================
-import { all, get, today } from "./db.js";
+import { all, get, today, getSetting, setSetting } from "./db.js";
 
 export function getProfile() {
   const row = get("SELECT * FROM profile WHERE id = 1");
@@ -91,50 +91,56 @@ export function getMemories(limit = 30) {
 // THE COACH'S MEMORY. Every time we talk to the AI, we paste this
 // text in, so it "knows" you. This is how we personalise the AI
 // WITHOUT fine-tuning: the right context, every single time.
+//
+// COST TRICK: we keep it SHORT. Instead of every answer and all
+// history, we send a ~100-word running summary (rewritten weekly by
+// the AI), this week's plan, a one-line-per-day log, the last 3
+// check-ins and the 10 newest memory facts. Fewer tokens = cheaper.
 // -------------------------------------------------------------
+export function getMemorySummary() {
+  return getSetting("memory_summary") ?? "";
+}
+export function setMemorySummary(text) {
+  if (text) setSetting("memory_summary", text);
+}
+
+const short = (text, max = 160) => {
+  const t = String(text ?? "").replace(/\s+/g, " ").trim();
+  return t.length > max ? t.slice(0, max) + "…" : t;
+};
+
 export function buildContext() {
   const p = getProfile();
   if (!p) return "The student has not completed onboarding yet.";
 
-  const a = p.assessment;
+  const a = p.answers;
   const week = currentMilestone(p);
   const tasksToday = getTasks(today());
   const stats = getDailyStats(7);
   const recentCheckins = all(
-    "SELECT date, mood, energy, wins, blockers FROM checkins ORDER BY date DESC LIMIT 5",
+    "SELECT date, wins, blockers FROM checkins ORDER BY date DESC LIMIT 3",
   );
-  const memories = getMemories();
+  const memories = getMemories(10);
 
   const lines = [
     `Today is ${today()}.`,
-    `## Student profile`,
-    `Name: ${p.name}`,
-    ...Object.entries(p.answers).map(([k, v]) => `- ${k}: ${Array.isArray(v) ? v.join(", ") : v}`),
-    `Baseline quiz score: ${p.quiz_score ?? "n/a"}/100`,
-    `## Your assessment from onboarding`,
-    a.summary,
-    `Level: ${a.level}`,
-    `Scores: ${a.scores.map((s) => `${s.name} ${s.value}/100`).join(", ")}`,
-    `Strengths: ${a.strengths.join("; ")}`,
-    `Weaknesses: ${a.weaknesses.join("; ")}`,
-    `## Plan`,
-    week
-      ? `Current: Week ${week.week_number} — ${week.title}. Focus: ${week.focus}. Goals: ${week.goals.join("; ")}`
-      : "No roadmap yet.",
+    `## Who they are`,
+    getMemorySummary() ||
+      `${p.name}. ${short(a.about)} Goal: ${short(a.goal)}. Learning: ${short(a.learn)}. Level: ${p.assessment.level}.`,
+    `Daily time: ${a.hours}. Blockers: ${(a.problems ?? []).join(", ") || "none listed"}. Interests: ${short(a.interests, 80)}.`,
+    `## This week`,
+    week ? `Week ${week.week_number}: ${week.title} — ${week.goals.join("; ")}` : "No roadmap yet.",
     `## Today's tasks`,
     tasksToday.length
-      ? tasksToday.map((t) => `- [${t.done ? "x" : " "}] ${t.title} (${t.minutes} min)`).join("\n")
-      : "None generated yet.",
-    `## Last 7 days`,
-    `Check-in streak: ${getStreak()} days`,
-    ...stats.map(
-      (d) => `- ${d.date}: tasks ${d.done}/${d.total}` + (d.mood ? `, mood ${d.mood}/10, energy ${d.energy}/10` : ", no check-in"),
-    ),
+      ? tasksToday.map((t) => `- [${t.done ? "x" : " "}] ${t.title}`).join("\n")
+      : "None planned yet.",
+    `## Last 7 days (streak ${getStreak()})`,
+    stats.map((d) => `${d.date.slice(5)}: ${d.done}/${d.total}${d.mood ? ` m${d.mood}` : ""}`).join(" | "),
     `## Recent check-ins`,
     ...(recentCheckins.length
-      ? recentCheckins.map((c) => `- ${c.date}: wins: ${c.wins || "-"} | blockers: ${c.blockers || "-"}`)
+      ? recentCheckins.map((c) => `- ${c.date}: wins: ${short(c.wins, 100) || "-"} | blockers: ${short(c.blockers, 100) || "-"}`)
       : ["None yet."]),
-    `## Things you remember about them`,
+    `## Facts you remember`,
     ...(memories.length ? memories.map((m) => `- ${m}`) : ["Nothing yet."]),
   ];
   return lines.join("\n");

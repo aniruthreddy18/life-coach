@@ -120,6 +120,8 @@ export default function Onboarding({ onDone }) {
         </div>
         <div className="card">
           <h3>Your 12-week roadmap</h3>
+          {result.sources?.roadmap === "library" && <p className="muted small-print">Reused from the library: free, instant.</p>}
+          {result.sources?.roadmap === "rules" && <p className="muted small-print">Made from a template (AI not available).</p>}
           <ol className="roadmap-mini">
             {a.roadmap.map((w) => <li key={w.week_number}><b>Week {w.week_number}:</b> {w.title}</li>)}
           </ol>

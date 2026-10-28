@@ -265,3 +265,21 @@ a { color: var(--accent); }
 .spinner { width: 32px; height: 32px; border: 3px solid var(--surface-2); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 50% { opacity: 0.3; } }
+
+/* ---------- Cost-control UI ---------- */
+.small-print { font-size: 0.85rem; margin-top: -4px; }
+.banner {
+  display: block;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px;
+  padding: 10px 14px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.92rem;
+}
+.banner-more { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.usage-table { width: 100%; border-collapse: collapse; margin: 10px 0 4px; font-size: 0.92rem; }
+.usage-table td { padding: 4px 0; border-top: 1px solid var(--border); }
+.usage-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }

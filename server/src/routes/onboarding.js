@@ -57,6 +57,7 @@ router.delete("/profile", (req, res) => {
   db.exec(`
     DELETE FROM tasks; DELETE FROM milestones; DELETE FROM checkins;
     DELETE FROM messages; DELETE FROM memories; DELETE FROM reports; DELETE FROM profile;
+    DELETE FROM settings WHERE key IN ('memory_summary', 'ai_status');
   `);
   res.status(204).end(); // 204 = "No Content" (success, nothing to send back)
 });

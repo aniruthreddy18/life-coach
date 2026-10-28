@@ -14,17 +14,12 @@ import { get, today } from "./db.js";
 import { getProfile, getTasks } from "./state.js";
 import { ensureTodayTasks, generateWeeklyReport } from "./coach.js";
 import { notifyAll } from "./push.js";
+import { NUDGES } from "./rules.js";
 
 function toCron(hhmm, fallback) {
   const [h, m] = (hhmm || fallback).split(":").map(Number);
   return `${m} ${h} * * *`;
 }
-
-const NUDGES = {
-  gentle: "Hey, you haven't checked in today. Even 2 minutes counts 💛",
-  balanced: "No check-in yet today. Open the app and tell me how it went.",
-  strict: "Still no check-in? Discipline isn't optional. Open the app. Now.",
-};
 
 export function startScheduler() {
   // Morning: make today's plan and send it

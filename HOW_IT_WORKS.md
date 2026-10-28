@@ -263,7 +263,48 @@ Normally code only runs when a request comes in. **Cron jobs** run on a clock (`
 
 ---
 
-## 8. Onboarding, step by step
+## 8. Saving money: the cost-smart design 💰
+
+AI APIs charge per **token** (≈ ¾ of a word), for what you send AND what you get back.
+So the cheapest AI call is the one you don't make. The app uses five techniques — the same ones
+companies use to keep their AI bills down:
+
+**1. Library → AI → Rules** (`coach.js`, function `aiOrRules`)
+```
+generateQuiz():  question bank has 5 for "DSA"?  ──yes──► use them (free)
+                         │ no
+                         ▼
+                 ask the AI once ──► SAVE to question_bank ──► next student: free
+                         │ AI unavailable?
+                         ▼
+                 aptitude questions from the bank (free)
+```
+This pattern is called **caching**: store the result of expensive work so you never pay for it twice.
+
+**2. Rules for anything that's just math** (`rules.js`)
+Scores, grades, streaks and report numbers are SQL + if/else. They're free, instant and always the same.
+
+**3. Batching** (`planWeek()` in `coach.js`)
+One request that plans 7 days costs much less than 7 requests, because the long context
+(who you are, your roadmap) is sent once instead of 7 times.
+
+**4. Smaller context** (`buildContext()` in `state.js`)
+Instead of all your answers and 30 past messages, the AI gets a ~100-word **running summary**
+(rewritten every week by the weekly report call), this week's plan, and the last 8 messages.
+
+**5. A budget guard + graceful fallback** (`usage.js`, `ai.js`)
+Every AI call is logged in `ai_usage` with its tokens and cost. Before each call:
+```
+spent today >= DAILY_BUDGET_USD ?  → free model (if set) → else AIUnavailable → rules
+```
+`AIUnavailable` is a custom error class. Throwing it doesn't crash anything; `aiOrRules()`
+catches it and runs the rules version instead. That's **graceful degradation**: when something
+fails, the app gets simpler instead of breaking.
+
+**Try it:** set `AI_PROVIDER=none` in `.env`, restart, and use the app. Everything still works.
+Then open Settings → AI usage to see what the AI would have cost.
+
+## 9. Onboarding, step by step
 
 ```
 You answer 12 questions          (state in Onboarding.jsx, nothing saved yet)
@@ -284,7 +325,7 @@ Results screen → Dashboard → AI plans your first day
 
 ---
 
-## 9. Learn by changing it — exercises (easy → hard)
+## 10. Learn by changing it — exercises (easy → hard)
 
 Run `npm run dev`. Each change shows up instantly when you save.
 
@@ -304,7 +345,7 @@ Stuck? Ask me. Bring the error message and the file you changed.
 
 ---
 
-## 10. Glossary
+## 11. Glossary
 
 - **API**: a set of URLs a program exposes so other programs can use it
 - **HTTP**: the protocol browsers and servers use to talk (methods + URLs + status codes)
@@ -322,4 +363,7 @@ Stuck? Ask me. Bring the error message and the file you changed.
 - **Interface**: the functions the rest of the code relies on (`askJSON`, `streamText`). Any provider that implements them can be plugged in
 - **System prompt**: instructions that define how the AI behaves
 - **Context**: all the text you send the AI in one request
+- **Token**: the unit AI companies charge by (about ¾ of a word)
+- **Caching**: saving the result of expensive work so you never pay for it twice
+- **Graceful degradation**: when a part fails, the app gets simpler instead of crashing
 - **Streaming**: sending a response in pieces as it's produced

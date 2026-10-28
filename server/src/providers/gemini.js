@@ -16,6 +16,11 @@ export const MODELS = {
 };
 
 const appError = (status, message) => Object.assign(new Error(message), { status });
+const usageOf = (u) => ({
+  input: u?.promptTokenCount ?? 0,
+  output: (u?.candidatesTokenCount ?? 0) + (u?.thoughtsTokenCount ?? 0),
+  cost: null,
+});
 
 let client;
 function getClient() {
@@ -66,7 +71,7 @@ export async function askJSON({ system, prompt, schema, tier }) {
     });
     const text = response.text;
     if (!text) throw appError(422, "Gemini returned an empty answer (it may have been blocked). Try again.");
-    return JSON.parse(text);
+    return { data: JSON.parse(text), usage: usageOf(response.usageMetadata) };
   } catch (err) {
     throw friendly(err, model);
   }
@@ -81,14 +86,16 @@ export async function streamText({ system, messages, onText, tier }) {
       config: { systemInstruction: system },
     });
     let full = "";
+    let usage = null;
     for await (const chunk of stream) {
+      if (chunk.usageMetadata) usage = chunk.usageMetadata;
       const piece = chunk.text;
       if (piece) {
         full += piece;
         onText(piece);
       }
     }
-    return full;
+    return { text: full, usage: usageOf(usage) };
   } catch (err) {
     throw friendly(err, model);
   }

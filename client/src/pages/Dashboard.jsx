@@ -69,6 +69,8 @@ export default function Dashboard() {
         <Link to="/settings" className="icon-btn" aria-label="Settings">⚙️</Link>
       </header>
 
+      <AIBanner ai={data.ai} />
+
       {data.milestone && (
         <div className="card week">
           <p className="eyebrow">Week {data.milestone.week_number} of 12</p>
@@ -119,9 +121,25 @@ export default function Dashboard() {
       </section>
 
       <section className="card">
-        <h3>Your baseline scores</h3>
-        <ScoreBars scores={data.assessment.scores} />
+        <h3>Your scores (live)</h3>
+        <p className="muted small-print">Recalculated every day from what you actually do — no AI needed.</p>
+        <ScoreBars scores={data.liveScores} />
       </section>
     </>
+  );
+}
+
+// Tells you when the coach is running without AI, and why
+function AIBanner({ ai }) {
+  if (!ai) return null;
+  let text = null;
+  if (!ai.enabled) text = "Free mode: AI is turned off. Plans and replies come from rules and templates.";
+  else if (ai.overBudget) text = "Today's AI budget is used up. The coach uses free templates until tomorrow.";
+  else if (!ai.ok) text = `Coach is in offline mode: ${ai.reason}`;
+  if (!text) return null;
+  return (
+    <Link to="/settings" className="banner">
+      {text} <span className="banner-more">Details →</span>
+    </Link>
   );
 }

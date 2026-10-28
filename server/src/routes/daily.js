@@ -12,6 +12,9 @@ import {
   getProfile, currentMilestone, getTasks, getStreak, getDailyStats,
 } from "../state.js";
 import { ensureTodayTasks, submitCheckin } from "../coach.js";
+import { liveScores } from "../rules.js";
+import { getAIStatus, isOverBudget } from "../usage.js";
+import { AI_ENABLED } from "../ai.js";
 
 export const router = Router();
 
@@ -36,6 +39,8 @@ router.get("/dashboard", (req, res) => {
     avgMood: moods.length ? +(moods.reduce((a, b) => a + b, 0) / moods.length).toFixed(1) : null,
     checkedInToday: Boolean(get("SELECT 1 FROM checkins WHERE date = ?", today())),
     stats,
+    liveScores: liveScores(profile), // recalculated by rules from what you actually did
+    ai: { enabled: AI_ENABLED, overBudget: isOverBudget(), ...getAIStatus() },
   });
 });
 
