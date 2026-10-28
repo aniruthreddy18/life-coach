@@ -7,7 +7,12 @@
     <meta name="theme-color" content="#f6f9fc" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="/icon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- iPhone: open full-screen (no Safari bars) when started from the Home Screen -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Coach" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>Life Coach</title>
     <script>
       // Apply the saved theme BEFORE the page paints, so there's no flash.

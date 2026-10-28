@@ -178,6 +178,33 @@ is off, the app needs to be deployed online (that's a later phase).
 
 ---
 
+## 🌍 Put it online (everyone's phones)
+
+The app is ONE Node server (API + the built React app). Put it on **Render** (free) and everyone uses one link.
+The database is already online (Supabase), so nothing else moves.
+
+1. **Code on GitHub** (private repo is fine). Render deploys from GitHub; every push = a new version.
+2. **Render:** https://render.com → sign in with GitHub → **New → Blueprint** → pick the `life-coach` repo.
+   It reads `render.yaml` (build, start, India time zone…) and asks for two secrets:
+   `DATABASE_URL` (same Session pooler link as in your `.env`) and `OPENROUTER_API_KEY`. → **Apply**.
+3. After ~3 minutes you get a link like `https://life-coach-xxxx.onrender.com`. Open it on any phone.
+4. **Install it like an app:**
+   - **iPhone (Safari):** Share button → **Add to Home Screen**. Open it from the Home Screen icon
+     (needed for notifications on iPhone, iOS 16.4+), then Settings → Notifications → Turn on.
+   - **Android (Chrome):** ⋮ menu → **Install app** (or *Add to Home screen*), then turn on notifications.
+5. **Keep it awake (free plan):** Render's free server sleeps after 15 minutes with no visitors (the next
+   visit takes ~50 s, and sleeping servers send no notifications). Fix: a free monitor at
+   https://uptimerobot.com → *New monitor* → HTTP(s) → `https://<your-app>.onrender.com/api/health`
+   → every 5 minutes. One always-on free service fits in Render's monthly free hours.
+
+**Before sharing widely:** with `AUTH_MODE=email` anyone who types your email can open your account.
+For friends you trust that's fine; for strangers, set up codes (step 3b + 3c) and change `AUTH_MODE`
+to `otp` in Render → Environment.
+
+**Cost with many users:** each student can use at most `DAILY_BUDGET_USD` of AI a day (default $0.05).
+10 very active students ≈ $0.50/day worst case; most days far less thanks to the library + rules.
+Set a credit limit on your key at openrouter.ai/keys so a surprise can never cost more than you chose.
+
 ## 🤝 Study buddies (Friends tab)
 
 | Feature | How it works |
@@ -289,6 +316,7 @@ On OpenRouter, model names include the company: `openai/…`, `anthropic/…`, `
 
 ```
 life-coach/
+├── render.yaml             ← how Render runs the app online
 ├── server/                 ← BACKEND (Node.js + Express)
 │   ├── .env                ← your secrets + AI_PROVIDER switch (never share!)
 │   ├── db/schema.sql       ← the main tables (already in Supabase; `npm run db:setup` re-creates them)

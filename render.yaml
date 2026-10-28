@@ -1,0 +1,39 @@
+# =============================================================
+# render.yaml — how Render (render.com) runs Life Coach online
+# Render reads this file when you choose "New → Blueprint" and pick
+# this GitHub repo. Secrets (sync: false) are typed into Render's
+# dashboard once; they never go into GitHub.
+# =============================================================
+services:
+  - type: web
+    name: life-coach
+    runtime: node
+    plan: free
+    # postinstall also installs server/ and client/, then Vite builds the React app
+    buildCommand: npm install && npm run build
+    # One Node server: the API + the built React app, on Render's PORT
+    startCommand: npm start --prefix server
+    healthCheckPath: /api/health
+    autoDeploy: true # every push to GitHub = a new version online
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Render's computers use UTC. This makes "today", the 7:30 AM plan,
+      # the 9 PM check-in and the 11:55 PM duel results use India time.
+      - key: TZ
+        value: Asia/Kolkata
+      - key: AUTH_MODE
+        value: email
+      - key: AI_PROVIDER
+        value: openrouter
+      - key: DAILY_BUDGET_USD
+        value: "0.05"
+      - key: SUPABASE_URL
+        value: https://wkamdfylxzaiyggvrqsh.supabase.co
+      - key: SUPABASE_PUBLISHABLE_KEY
+        value: sb_publishable_JjLbXfRKIoxiV3f1XPyP6g_oDIkw8Ya
+      # Secrets: Render asks you for these when you create the service
+      - key: DATABASE_URL
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false

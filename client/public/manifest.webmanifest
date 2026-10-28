@@ -1,12 +1,35 @@
 {
   "name": "Life Coach",
   "short_name": "Coach",
-  "description": "Your personal AI coach: plans, check-ins, reports.",
+  "description": "Your personal AI coach: plans, check-ins, study buddies and daily duels.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f6f9fc",
   "theme_color": "#0a4174",
   "icons": [
-    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
   ]
 }
