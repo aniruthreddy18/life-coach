@@ -80,7 +80,9 @@ app.use((err, req, res, next) => {
 // --- Start: check the database, then listen ---
 async function start() {
   if (!process.env.DATABASE_URL) {
-    console.error('❌ DATABASE_URL is missing in server/.env. See README → "Connect Supabase", then run "npm run doctor".');
+    console.error("❌ DATABASE_URL is missing in server/.env (README step 3a):");
+    console.error("   Supabase dashboard → Connect → Session pooler → copy the URI → replace [YOUR-PASSWORD]");
+    console.error("   → paste it as DATABASE_URL=... in server/.env → save. Then run: npm run doctor");
     process.exit(1);
   }
   try {

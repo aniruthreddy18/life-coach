@@ -20,13 +20,8 @@ pg.types.setTypeParser(1082, (v) => v);         // date    -> "2026-10-28" (stri
 pg.types.setTypeParser(20, (v) => Number(v));   // bigint  -> number (ids, COUNT(*))
 pg.types.setTypeParser(1700, (v) => Number(v)); // numeric -> number (costs)
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) {
-  console.error("❌ DATABASE_URL is missing in server/.env. See README → 'Connect Supabase'.");
-}
-
 export const pool = new pg.Pool({
-  connectionString,
+  connectionString: process.env.DATABASE_URL, // index.js stops with a clear message if it's missing
   max: 5,
   // Supabase requires an encrypted (SSL) connection. Its certificate is
   // signed by Supabase's own authority, so we don't verify the chain here;
