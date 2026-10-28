@@ -4,17 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="Your personal career coach: a plan, daily tasks, evening check-ins and honest weekly reports." />
-    <meta name="theme-color" content="#0e0d0b" />
+    <meta name="theme-color" content="#f6f9fc" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icon.svg" />
     <title>Life Coach</title>
     <script>
-      // Apply the saved theme BEFORE the page paints, so there's no flash
-      try {
-        var t = localStorage.getItem("theme");
-        if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
-      } catch (e) {}
+      // Apply the saved theme BEFORE the page paints, so there's no flash.
+      // Default is light (navy + white); "system" follows the device.
+      var t = "light";
+      try { t = localStorage.getItem("theme") || "light"; } catch (e) {}
+      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
     </script>
   </head>
   <body>

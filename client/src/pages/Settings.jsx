@@ -91,9 +91,9 @@ export default function Settings({ onReset }) {
 }
 
 const THEMES = [
-  { id: "system", label: "System", icon: DesktopIcon },
   { id: "light", label: "Light", icon: SunIcon },
   { id: "dark", label: "Dark", icon: MoonIcon },
+  { id: "system", label: "System", icon: DesktopIcon },
 ];
 
 function ThemePicker() {

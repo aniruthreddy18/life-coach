@@ -274,7 +274,7 @@ export function Empty({ icon: Icon, title, children }) {
 // ---- Celebration ------------------------------------------------------------
 export function celebrate() {
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  const colors = ["#e9a23b", "#f3d29b", "#c98419", "#86bd8c"];
+  const colors = ["#0a4174", "#49769f", "#7bbde8", "#bdd8e9", "#4e8ea2"];
   const fire = (ratio, opts) =>
     confetti({ particleCount: Math.floor(160 * ratio), origin: { y: 0.75 }, colors, disableForReducedMotion: true, ...opts });
   fire(0.25, { spread: 26, startVelocity: 55 });

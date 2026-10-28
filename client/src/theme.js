@@ -1,15 +1,16 @@
 // =============================================================
 // theme.js — Light / Dark / System
 // The choice is a per-device convenience, so localStorage is fine.
+// Default: light (the navy + white brand look).
 // index.html applies it BEFORE the page paints (no white flash).
 // =============================================================
 const KEY = "theme";
 
 export function getTheme() {
   try {
-    return localStorage.getItem(KEY) || "system";
+    return localStorage.getItem(KEY) || "light";
   } catch {
-    return "system";
+    return "light";
   }
 }
 
@@ -28,5 +29,5 @@ export function applyTheme(theme) {
   else delete root.dataset.theme;
   // keep the phone's status bar colour in sync
   const bg = getComputedStyle(root).getPropertyValue("--bg").trim();
-  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", bg || "#0e0d0b");
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", bg || "#f6f9fc");
 }

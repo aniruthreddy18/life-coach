@@ -187,7 +187,7 @@ function Intro({ ready, error, onStart }) {
   return (
     <motion.div className="question" initial="hidden" animate="show" exit={{ opacity: 0, y: -12 }} variants={stagger}>
       <motion.span className="label" variants={rise}>Welcome</motion.span>
-      <motion.h1 variants={rise} style={{ fontSize: "clamp(2.8rem, 10vw, 4.4rem)" }}>
+      <motion.h1 variants={rise} style={{ fontSize: "clamp(2rem, 7.5vw, 3rem)" }}>
         Let's find out where you are, and <em style={{ color: "var(--accent-ink)" }}>where you're going.</em>
       </motion.h1>
       <motion.p className="muted" variants={rise} style={{ fontSize: "1.05rem", maxWidth: "46ch" }}>
@@ -224,7 +224,7 @@ function Thinking({ lines }) {
         <motion.span animate={{ scale: [1, 1.12, 1] }} transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }} />
       </div>
       <AnimatePresence mode="wait">
-        <motion.p key={i} className="display" style={{ fontSize: "1.7rem" }} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
+        <motion.p key={i} className="display" style={{ fontSize: "1.3rem" }} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}>
           {lines[i]}
         </motion.p>
       </AnimatePresence>

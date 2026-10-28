@@ -79,7 +79,7 @@ export default function Chat() {
       <div className="messages" aria-live="polite">
         {messages.length === 0 && (
           <Reveal className="empty">
-            <h3 className="display" style={{ fontSize: "2rem" }}>Say hi to your coach.</h3>
+            <h3 className="display" style={{ fontSize: "1.5rem" }}>Say hi to your coach.</h3>
             <p className="muted">Ask for a plan, an explanation, a quiz, or just tell it how today went.</p>
           </Reveal>
         )}

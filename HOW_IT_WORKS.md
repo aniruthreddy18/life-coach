@@ -104,7 +104,7 @@ If anything fails, the error flows back the same way and React shows it in red.
 | **Optimistic update** | Update the screen first, then confirm with the server | `toggle()` in `Dashboard.jsx` |
 | **Streaming** | Show the AI's answer word by word | `streamChat()` in `api.js` + `send()` in `Chat.jsx` |
 | **PWA** | Website that installs like an app and gets notifications | `public/manifest.webmanifest`, `public/sw.js` |
-| **Design tokens** | Colours, radii and shadows defined once as CSS variables; dark mode just swaps the values | top of `styles.css` |
+| **Design tokens** | Colours (brand navy `#0A4174` + white), radii and shadows defined once as CSS variables; dark mode just swaps the values. Text colours were checked for contrast (readability) | top of `styles.css` |
 | **Spring animations** | Things move like real objects (Motion library). Only `transform`/`opacity` are animated, so it stays smooth on cheap phones | `components.jsx` (`spring`, `Page`, `Ring`, `Check`) |
 | **Variants + stagger** | Name animation states once; a page's cards cascade in one after another | `pageVariants` / `itemVariants` in `components.jsx` |
 | **Shared layout animation** | One element (`layoutId`) that glides between positions: the dock's highlight pill, the theme picker | `Dock` in `App.jsx`, `ThemePicker` in `Settings.jsx` |

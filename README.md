@@ -211,6 +211,6 @@ life-coach/
         ├── api.js          ← every call to the backend lives here
         ├── components.jsx  ← reusable ANIMATED pieces (cards, ring, checkbox, charts, counters)
         ├── theme.js        ← System / Light / Dark switch
-        ├── styles.css      ← the design system: colour tokens, type, surfaces (light + dark)
+        ├── styles.css      ← the design system: navy #0A4174 + white, Inter font, light + dark
         └── pages/          ← one file per screen
 ```
