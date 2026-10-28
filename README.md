@@ -4,7 +4,7 @@ An app that gets to know you (12 onboarding questions + an AI level test), score
 builds a 12-week roadmap, plans your tasks every day, checks in with you every night,
 talks to you like a friend/teacher/mentor, and writes you a weekly report.
 
-**Stack:** React (Vite) · Node.js + Express · SQLite · OpenRouter, OpenAI, Gemini or Claude API · Web Push · node-cron
+**Stack:** React (Vite) + Motion animations · Node.js + Express · SQLite · OpenRouter, OpenAI, Gemini or Claude API · Web Push · node-cron
 
 > New to this? Read **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)**. It explains every part like you're a fresher.
 
@@ -209,7 +209,8 @@ life-coach/
         ├── main.jsx        ← React starts here
         ├── App.jsx         ← onboarding gate + pages + bottom tabs
         ├── api.js          ← every call to the backend lives here
-        ├── components.jsx  ← reusable pieces (charts, score bars, spinner)
-        ├── styles.css      ← look & feel (light + dark mode)
+        ├── components.jsx  ← reusable ANIMATED pieces (cards, ring, checkbox, charts, counters)
+        ├── theme.js        ← System / Light / Dark switch
+        ├── styles.css      ← the design system: colour tokens, type, surfaces (light + dark)
         └── pages/          ← one file per screen
 ```

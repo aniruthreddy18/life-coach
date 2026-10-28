@@ -1,18 +1,27 @@
 // =============================================================
 // Dashboard.jsx — the "Today" screen
 // Loads /api/dashboard. If today has no tasks yet, asks
-// /api/tasks/today, which makes the AI plan your day.
+// /api/tasks/today, which plans the week (AI or rules).
 // =============================================================
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { AnimatePresence, motion } from "motion/react";
+import {
+  FireIcon, TargetIcon, SmileyIcon, ListChecksIcon, ChartBarIcon, PulseIcon, QuotesIcon, ArrowRightIcon,
+  WarningIcon, CalendarCheckIcon, SparkleIcon,
+} from "@phosphor-icons/react";
 import { api } from "../api.js";
-import { CompletionChart, ScoreBars, Spinner, StatTile } from "../components.jsx";
+import {
+  Page, Card, Reveal, Ring, Check, StatTile, ScoreBars, CompletionChart, PageSkeleton, Skeleton, Button,
+  celebrate, spring, itemVariants,
+} from "../components.jsx";
 
 export default function Dashboard() {
   const [data, setData] = useState(null);
   const [planning, setPlanning] = useState(false);
   const [morningMsg, setMorningMsg] = useState("");
   const [error, setError] = useState("");
+  const wasAllDone = useRef(null);
 
   async function load() {
     try {
@@ -37,7 +46,17 @@ export default function Dashboard() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
+
+  // Confetti the moment the LAST task of the day gets ticked
+  useEffect(() => {
+    if (!data?.tasks.length) return;
+    const allDone = data.tasks.every((t) => t.done);
+    if (wasAllDone.current === false && allDone) celebrate();
+    wasAllDone.current = allDone;
+  }, [data?.tasks]);
 
   async function toggle(task) {
     // "Optimistic update": change the screen first, then tell the server.
@@ -45,7 +64,7 @@ export default function Dashboard() {
     try {
       await api(`/tasks/${task.id}`, { method: "PATCH", body: { done: !task.done } });
       const fresh = await api("/dashboard");
-      setData(fresh);
+      setData((d) => ({ ...fresh, tasks: d.tasks.map((t) => fresh.tasks.find((f) => f.id === t.id) ?? t) }));
     } catch (e) {
       setError(e.message);
       load(); // undo by reloading the truth from the server
@@ -53,79 +72,139 @@ export default function Dashboard() {
   }
 
   if (error && !data) return <div className="center error">{error}</div>;
-  if (!data) return <div className="center"><Spinner /></div>;
+  if (!data) return <PageSkeleton />;
 
   const done = data.tasks.filter((t) => t.done).length;
+  const total = data.tasks.length;
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  // Unfinished tasks first; finished ones glide to the bottom (layout animation)
+  const sorted = [...data.tasks].sort((a, b) => Number(a.done) - Number(b.done));
 
   return (
-    <>
-      <header className="page-head">
-        <div>
-          <p className="eyebrow">{greeting}</p>
-          <h1>{data.name} 👋</h1>
-        </div>
-        <Link to="/settings" className="icon-btn" aria-label="Settings">⚙️</Link>
-      </header>
-
+    <Page wide>
       <AIBanner ai={data.ai} />
 
-      {data.milestone && (
-        <div className="card week">
-          <p className="eyebrow">Week {data.milestone.week_number} of 12</p>
-          <h3>{data.milestone.title}</h3>
-          <p className="muted">{data.milestone.focus}</p>
-        </div>
-      )}
+      <div className="bento">
+        <Card className="glow hero area-hero">
+          <span className="label">{greeting}</span>
+          <h1 className="display">
+            Let's go, <em>{data.name}</em>.
+          </h1>
+          <div className="hero-meta">
+            {data.milestone && (
+              <span className="tag">
+                <CalendarCheckIcon size={14} weight="bold" /> Week {data.milestone.week_number} of 12
+              </span>
+            )}
+            {data.milestone && <span className="tag neutral">{data.milestone.title}</span>}
+          </div>
+        </Card>
 
-      <div className="stats">
-        <StatTile label="Day streak" value={`🔥 ${data.streak}`} />
-        <StatTile label="Done (7 days)" value={data.completionRate != null ? `${data.completionRate}%` : null} />
-        <StatTile label="Avg mood" value={data.avgMood} />
+        <Card className="area-today today-card">
+          <Ring value={total ? done / total : 0} size={96}>
+            <span className="num" style={{ fontSize: "1.3rem" }}>
+              {done}/{total || "–"}
+            </span>
+          </Ring>
+          <div className="today-copy">
+            <span className="label">Today</span>
+            <strong>{total && done === total ? "All done. Proud of you." : total ? `${total - done} to go` : "Planning…"}</strong>
+            {!data.checkedInToday && hour >= 17 ? (
+              <Link to="/checkin" className="muted" style={{ fontSize: "0.9rem" }}>
+                Do tonight's check-in →
+              </Link>
+            ) : (
+              <span className="muted" style={{ fontSize: "0.9rem" }}>{data.milestone?.focus}</span>
+            )}
+          </div>
+        </Card>
+
+        <Card className="area-tasks">
+          <div className="card-head">
+            <h2 className="card-title"><ListChecksIcon size={18} weight="bold" /> Today's tasks</h2>
+            <span className="num faint">{done}/{total}</span>
+          </div>
+
+          <AnimatePresence>
+            {morningMsg && (
+              <motion.div className="quote" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }}>
+                <QuotesIcon size={18} weight="fill" />
+                <span>{morningMsg}</span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {planning && (
+            <div className="tasks" aria-busy="true">
+              <p className="muted" style={{ marginBottom: 6 }}>
+                <SparkleIcon size={14} weight="fill" style={{ verticalAlign: "-2px" }} /> Coach is planning your week…
+              </p>
+              <Skeleton height={64} />
+              <Skeleton height={64} />
+            </div>
+          )}
+          {!planning && total === 0 && <Button onClick={planToday}>Plan my day</Button>}
+
+          <motion.ul className="tasks" layout>
+            <AnimatePresence initial={false}>
+              {sorted.map((t) => (
+                <motion.li
+                  key={t.id}
+                  layout
+                  transition={spring}
+                  className={`task ${t.done ? "done" : ""}`}
+                  onClick={() => toggle(t)}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                >
+                  <Check checked={t.done} onChange={() => toggle(t)} label={`Mark "${t.title}" as ${t.done ? "not done" : "done"}`} />
+                  <div className="task-body">
+                    <span className="task-title">
+                      {t.title}
+                      <motion.span
+                        className="task-strike"
+                        initial={false}
+                        animate={{ scaleX: t.done ? 1 : 0 }}
+                        transition={{ duration: 0.3, ease: "easeOut" }}
+                      />
+                    </span>
+                    <span className="task-meta">
+                      {t.details} · <span className="num">{t.minutes} min</span>
+                    </span>
+                  </div>
+                </motion.li>
+              ))}
+            </AnimatePresence>
+          </motion.ul>
+          {error && <p className="error" style={{ marginTop: 10 }}>{error}</p>}
+        </Card>
+
+        <div className="area-side">
+          <motion.div className="stat-grid" variants={itemVariants}>
+            <StatTile icon={FireIcon} label="Streak" value={data.streak} suffix="d" />
+            <StatTile icon={TargetIcon} label="This week" value={data.completionRate} suffix="%" />
+            <StatTile icon={SmileyIcon} label="Mood" value={data.avgMood} decimals={1} />
+          </motion.div>
+
+          <Card>
+            <div className="card-head">
+              <h2 className="card-title"><PulseIcon size={18} weight="bold" /> Your scores</h2>
+              <span className="tag neutral">live</span>
+            </div>
+            <ScoreBars scores={data.liveScores} />
+          </Card>
+        </div>
+
+        <Card className="area-chart">
+          <div className="card-head">
+            <h2 className="card-title"><ChartBarIcon size={18} weight="bold" /> Last 14 days</h2>
+          </div>
+          <CompletionChart stats={data.stats} />
+        </Card>
       </div>
-
-      <section className="card">
-        <div className="card-head">
-          <h3>Today's tasks</h3>
-          <span className="muted">{done}/{data.tasks.length}</span>
-        </div>
-        {morningMsg && <div className="coach-bubble small">{morningMsg}</div>}
-        {planning && <Spinner text="Coach is planning your day…" />}
-        {!planning && data.tasks.length === 0 && (
-          <button className="btn" onClick={planToday}>Plan my day</button>
-        )}
-        <ul className="tasks">
-          {data.tasks.map((t) => (
-            <li key={t.id} className={t.done ? "done" : ""}>
-              <label>
-                <input type="checkbox" checked={t.done} onChange={() => toggle(t)} />
-                <span>
-                  <b>{t.title}</b>
-                  <small>{t.details} · {t.minutes} min</small>
-                </span>
-              </label>
-            </li>
-          ))}
-        </ul>
-        {error && <p className="error">{error}</p>}
-      </section>
-
-      {!data.checkedInToday && hour >= 17 && (
-        <Link to="/checkin" className="btn primary wide">Do tonight's check-in →</Link>
-      )}
-
-      <section className="card">
-        <h3>Last 14 days</h3>
-        <CompletionChart stats={data.stats} />
-      </section>
-
-      <section className="card">
-        <h3>Your scores (live)</h3>
-        <p className="muted small-print">Recalculated every day from what you actually do — no AI needed.</p>
-        <ScoreBars scores={data.liveScores} />
-      </section>
-    </>
+    </Page>
   );
 }
 
@@ -133,13 +212,17 @@ export default function Dashboard() {
 function AIBanner({ ai }) {
   if (!ai) return null;
   let text = null;
-  if (!ai.enabled) text = "Free mode: AI is turned off. Plans and replies come from rules and templates.";
+  if (!ai.enabled) text = "Free mode: plans and replies come from rules and templates.";
   else if (ai.overBudget) text = "Today's AI budget is used up. The coach uses free templates until tomorrow.";
   else if (!ai.ok) text = `Coach is in offline mode: ${ai.reason}`;
   if (!text) return null;
   return (
-    <Link to="/settings" className="banner">
-      {text} <span className="banner-more">Details →</span>
-    </Link>
+    <Reveal>
+      <Link to="/settings" className="banner">
+        <WarningIcon size={18} weight="duotone" />
+        <span>{text}</span>
+        <ArrowRightIcon size={16} className="arrow" />
+      </Link>
+    </Reveal>
   );
 }

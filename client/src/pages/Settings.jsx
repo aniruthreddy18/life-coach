@@ -1,63 +1,120 @@
 // =============================================================
-// Settings.jsx — AI usage & budget, notifications, reset
+// Settings.jsx — appearance, AI usage & budget, notifications, reset
 // =============================================================
 import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import {
+  DesktopIcon, SunIcon, MoonIcon, CoinsIcon, BellIcon, ArrowCounterClockwiseIcon, BooksIcon, PaletteIcon,
+} from "@phosphor-icons/react";
 import { api, enableNotifications } from "../api.js";
+import { getTheme, setTheme } from "../theme.js";
+import { Page, Card, Reveal, Button, AnimatedNumber, spring, softSpring } from "../components.jsx";
 
 export default function Settings({ onReset }) {
   const [msg, setMsg] = useState("");
+  const [confirming, setConfirming] = useState(false);
 
   async function enable() {
     setMsg("");
     try {
       await enableNotifications();
-      setMsg("✅ Notifications enabled on this device.");
+      setMsg("Notifications are on for this device.");
     } catch (e) {
-      setMsg("⚠️ " + e.message);
+      setMsg(e.message);
     }
   }
 
   async function test() {
     const { sent } = await api("/push/test", { method: "POST" });
-    setMsg(sent ? `Sent to ${sent} device(s). Check your notifications!` : "No devices subscribed yet — enable first.");
+    setMsg(sent ? `Sent to ${sent} device(s). Check your notifications.` : "No devices subscribed yet. Enable them first.");
   }
 
   async function reset() {
-    if (!confirm("Delete ALL your data (profile, plan, tasks, chats, reports) and start over?")) return;
     await api("/profile", { method: "DELETE" });
     onReset();
   }
 
   return (
-    <>
-      <header className="page-head">
-        <div>
-          <p className="eyebrow">App</p>
-          <h1>Settings</h1>
+    <Page>
+      <Reveal className="page-head">
+        <span className="label">App</span>
+        <h1 className="display">Settings</h1>
+      </Reveal>
+
+      <Card>
+        <div className="card-head">
+          <span className="card-title"><PaletteIcon size={18} weight="bold" /> Appearance</span>
         </div>
-      </header>
+        <ThemePicker />
+      </Card>
 
       <UsageCard />
 
-      <section className="card">
-        <h3>🔔 Notifications</h3>
-        <p className="muted">
-          Morning plan, evening check-in reminder, a stricter nudge if you skip, and a Sunday report.
-          The server must be running for notifications to be sent.
-        </p>
-        <div className="row">
-          <button className="btn primary" onClick={enable}>Enable on this device</button>
-          <button className="btn" onClick={test}>Send test</button>
+      <Card>
+        <div className="card-head">
+          <span className="card-title"><BellIcon size={18} weight="bold" /> Notifications</span>
         </div>
-        {msg && <p>{msg}</p>}
-      </section>
+        <p className="muted">
+          Morning plan, evening check-in reminder, a firmer nudge if you skip, and the Sunday report.
+          They're sent while the server is running.
+        </p>
+        <div className="row" style={{ marginTop: 14 }}>
+          <Button variant="primary" onClick={enable}>Turn on</Button>
+          <Button onClick={test}>Send a test</Button>
+        </div>
+        {msg && <p style={{ marginTop: 10 }}>{msg}</p>}
+      </Card>
 
-      <section className="card">
-        <h3>🧨 Start over</h3>
-        <p className="muted">Redo onboarding with fresh answers. This deletes everything.</p>
-        <button className="btn danger" onClick={reset}>Reset everything</button>
-      </section>
-    </>
+      <Card>
+        <div className="card-head">
+          <span className="card-title"><ArrowCounterClockwiseIcon size={18} weight="bold" /> Start over</span>
+        </div>
+        <p className="muted">Redo onboarding with fresh answers. This deletes your plan, tasks, chats and reports.</p>
+        <div className="row" style={{ marginTop: 14 }}>
+          <AnimatePresence mode="wait" initial={false}>
+            {!confirming ? (
+              <motion.div key="ask" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <Button variant="danger" onClick={() => setConfirming(true)}>Reset everything</Button>
+              </motion.div>
+            ) : (
+              <motion.div key="confirm" className="row" initial={{ opacity: 0, x: 10 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0 }}>
+                <span className="error" style={{ fontWeight: 500 }}>Delete everything?</span>
+                <Button variant="danger" onClick={reset}>Yes, delete</Button>
+                <Button variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </Card>
+    </Page>
+  );
+}
+
+const THEMES = [
+  { id: "system", label: "System", icon: DesktopIcon },
+  { id: "light", label: "Light", icon: SunIcon },
+  { id: "dark", label: "Dark", icon: MoonIcon },
+];
+
+function ThemePicker() {
+  const [theme, setThemeState] = useState(getTheme());
+  return (
+    <div className="segmented" role="group" aria-label="Theme">
+      {THEMES.map(({ id, label, icon: Icon }) => (
+        <button
+          key={id}
+          aria-pressed={theme === id}
+          onClick={() => {
+            setTheme(id);
+            setThemeState(id);
+          }}
+        >
+          {theme === id && <motion.span layoutId="theme-pill" className="seg-pill" transition={spring} />}
+          <Icon size={16} weight={theme === id ? "fill" : "regular"} />
+          <span>{label}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -71,33 +128,38 @@ function UsageCard() {
   }, []);
   if (!u) return null;
 
-  const inr = (usd) => `₹${(usd * u.inrPerUsd).toFixed(usd * u.inrPerUsd < 1 ? 2 : 0)}`;
-  const usedPct = u.budgetUsd ? Math.min(100, Math.round((u.today.cost / u.budgetUsd) * 100)) : 0;
+  const toInr = (usd) => usd * u.inrPerUsd;
+  const inr = (usd) => `₹${toInr(usd).toFixed(toInr(usd) < 1 ? 2 : 0)}`;
+  const usedPct = u.budgetUsd ? Math.min(1, u.today.cost / u.budgetUsd) : 0;
   const lib = u.library;
 
   return (
-    <section className="card">
-      <h3>💰 AI usage & budget</h3>
-      <p className="muted">
-        {u.aiEnabled
-          ? <>Provider: <b>{u.provider}</b> · smart: {u.models.smart} · fast: {u.models.fast}{u.models.free ? ` · free: ${u.models.free}` : ""}</>
-          : <>AI is <b>off</b> (AI_PROVIDER=none). Everything runs on free rules and templates.</>}
-      </p>
+    <Card>
+      <div className="card-head">
+        <span className="card-title"><CoinsIcon size={18} weight="bold" /> AI usage & budget</span>
+        <span className="tag neutral">{u.aiEnabled ? u.provider : "AI off"}</span>
+      </div>
 
-      {u.aiEnabled && (
+      {u.aiEnabled ? (
         <>
-          <div className="score-head">
-            <span>Today: {inr(u.today.cost)} of {u.budgetUsd ? inr(u.budgetUsd) : "no limit"}</span>
-            <b>{u.today.calls} AI call(s)</b>
+          <span className="label">Spent today</span>
+          <div className="usage-big">
+            <span className="num">₹<AnimatedNumber value={toInr(u.today.cost)} decimals={2} /></span>
+            <span className="muted">of {u.budgetUsd ? inr(u.budgetUsd) : "no limit"} · {u.today.calls} call(s)</span>
           </div>
           {u.budgetUsd > 0 && (
-            <div className="meter" role="meter" aria-valuenow={usedPct} aria-valuemin={0} aria-valuemax={100} aria-label="Daily budget used">
-              <div style={{ width: `${usedPct}%` }} />
+            <div className="meter" role="meter" aria-valuenow={Math.round(usedPct * 100)} aria-valuemin={0} aria-valuemax={100} aria-label="Daily budget used">
+              <motion.div initial={{ scaleX: 0 }} animate={{ scaleX: usedPct }} transition={softSpring} />
             </div>
           )}
-          {u.overBudget && <p className="error">Budget reached — {u.models.free ? "using the free model" : "using free templates"} until tomorrow.</p>}
-          {!u.aiStatus.ok && <p className="error">Last AI call failed: {u.aiStatus.reason}</p>}
+          <p className="faint" style={{ fontSize: "0.83rem", marginTop: 8 }}>
+            smart: {u.models.smart} · fast: {u.models.fast}{u.models.free ? ` · free: ${u.models.free}` : ""}
+          </p>
+          {u.overBudget && <p className="error" style={{ marginTop: 8 }}>Budget reached. Using {u.models.free ? "the free model" : "free templates"} until tomorrow.</p>}
+          {!u.aiStatus.ok && <p className="error" style={{ marginTop: 8 }}>Last AI call failed: {u.aiStatus.reason}</p>}
         </>
+      ) : (
+        <p className="muted">AI is off (<code>AI_PROVIDER=none</code>). Everything runs on free rules and templates.</p>
       )}
 
       <table className="usage-table">
@@ -105,17 +167,19 @@ function UsageCard() {
           <tr><td>Last 7 days</td><td>{inr(u.last7.reduce((s, d) => s + d.cost, 0))} · {u.last7.reduce((s, d) => s + d.calls, 0)} calls</td></tr>
           <tr><td>All time</td><td>{inr(u.allTime.cost)} · {u.allTime.calls} calls</td></tr>
           {u.byFeature.map((f) => (
-            <tr key={f.feature}><td className="muted">· {f.feature}</td><td className="muted">{inr(f.cost)} · {f.calls}</td></tr>
+            <tr key={f.feature} className="sub"><td>· {f.feature}</td><td>{inr(f.cost)} · {f.calls}</td></tr>
           ))}
         </tbody>
       </table>
 
-      <h4>📚 Free content library</h4>
-      <p className="muted">
-        {lib.questions} level-test questions ({lib.aiQuestions} written by AI, reused for free) ·
-        {" "}{lib.roadmaps.n} saved roadmap(s), used {lib.roadmaps.uses}× ·
-        {" "}{lib.explanations.n} saved explanation(s), reused {lib.explanations.hits}×
-      </p>
-    </section>
+      <h4 style={{ marginTop: 18, display: "flex", alignItems: "center", gap: 6, fontSize: "0.92rem" }}>
+        <BooksIcon size={16} weight="duotone" color="var(--accent)" /> Free content library
+      </h4>
+      <div className="lib-grid">
+        <div><span className="num"><AnimatedNumber value={lib.questions} /></span><span className="label">quiz questions</span></div>
+        <div><span className="num"><AnimatedNumber value={lib.roadmaps.uses} /></span><span className="label">roadmap reuses</span></div>
+        <div><span className="num"><AnimatedNumber value={lib.explanations.hits} /></span><span className="label">answers reused</span></div>
+      </div>
+    </Card>
   );
 }
