@@ -10,6 +10,10 @@ get a different funny hello ("Hii bro, ela unnav? 😄"), and the daily notifica
 friend ("Smooth start chesava master uu?", "Rey Kamal Haasan, what's the update?"), in Tenglish,
 Hinglish or English depending on the language you pick.
 
+**Study buddies 🤝:** find students with the same goal (opt-in, match %), add friends by code,
+chat, poke, and **duel every day** ⚔️ (same 5 questions for both + your tasks + check-in), plus a
+**weekly 10-question quiz** and a head-to-head record.
+
 **Stack:** React (Vite) + Motion animations · Node.js + Express · **Supabase** (Postgres database + email OTP sign-in) · OpenRouter, OpenAI, Gemini or Claude API · Web Push · node-cron
 
 > New to this? Read **[HOW_IT_WORKS.md](HOW_IT_WORKS.md)**. It explains every part like you're a fresher.
@@ -174,6 +178,22 @@ is off, the app needs to be deployed online (that's a later phase).
 
 ---
 
+## 🤝 Study buddies (Friends tab)
+
+| Feature | How it works |
+|---|---|
+| **Find study buddies** | Opt-in: Friends → Find → *Show me*. You see others who opted in, ranked by a match % (same subject 45, level 20, goal 15, daily time 10, language 10) with the reasons shown. Others see your name, goal, subjects, level, daily time and language. **Never your email.** |
+| **Friend code** | Everyone gets a 7-character code (Friends → Find). Share it and a friend can add you directly, even if you're hidden. |
+| **Requests** | Send → they accept → you're friends. If they had already asked you, sending back = instant accept. |
+| **Chat + Poke** | 1:1 messages (checked every 4 s). 👉 Poke sends a funny push ("Rey, chaduvu ra! 📚"), once an hour. |
+| **Daily Duel ⚔️** | Same 5 questions for both, one try. Points: quiz 10 each (50) + your tasks done (30) + check-in (20). Answers stay hidden until you submit. Winner at `DUEL_END_TIME` (23:55) with a funny notification. Tie → whoever finished the quiz first. |
+| **Weekly Quiz 📝** | 10 questions, same for both, Monday–Sunday. |
+| **Record 🏆** | Wins / losses / ties, current streak, last 10 duels. |
+| **Safety** | ⋮ menu in a chat: Unfriend, **Block** (you disappear for each other everywhere), **Report** (saved in the `user_reports` table for you to review in Supabase). |
+
+Questions come from the free question bank first, skipping ones the pair has already seen. When a subject
+runs out, the AI writes a new batch **once** and saves it for everyone (cost-smart, like the rest of the app).
+
 ## 💰 Cost control (built for a student budget)
 
 The app is designed so AI is a small extra, not the engine. Every feature follows the same order:
@@ -271,7 +291,8 @@ On OpenRouter, model names include the company: `openai/…`, `anthropic/…`, `
 life-coach/
 ├── server/                 ← BACKEND (Node.js + Express)
 │   ├── .env                ← your secrets + AI_PROVIDER switch (never share!)
-│   ├── db/schema.sql       ← all 13 tables (already in Supabase; `npm run db:setup` re-creates them)
+│   ├── db/schema.sql       ← the main tables (already in Supabase; `npm run db:setup` re-creates them)
+│   ├── db/friends.sql      ← study-buddy tables (friendships, chat, duels, weekly quizzes)
 │   ├── scripts/
 │   │   ├── doctor.js       ← `npm run doctor`: checks .env, AI key, Supabase, database
 │   │   ├── db-setup.js     ← `npm run db:setup`
@@ -282,6 +303,8 @@ life-coach/
 │       ├── auth.js         ← sign-in (email or code) + checks your token on every request (req.user)
 │       ├── db.js           ← Postgres connection pool + SQL helpers
 │       ├── messages.js     ← the funny hellos + notifications (Tenglish / Hinglish / English)
+│       ├── friends.js      ← study buddies: matching, requests, chat, poke, block/report
+│       ├── duels.js        ← daily duel + weekly quiz + scoring + rivalry
 │       ├── state.js        ← reads your data, computes streak/stats, builds AI context
 │       ├── ai.js           ← the one door to the AI: picks OpenRouter, OpenAI, Gemini or Claude + coach personality
 │       ├── providers/
@@ -310,5 +333,5 @@ life-coach/
         ├── components.jsx  ← reusable ANIMATED pieces (cards, ring, checkbox, charts, counters)
         ├── theme.js        ← System / Light / Dark switch
         ├── styles.css      ← the design system: navy #0A4174 + white, Inter font, light + dark
-        └── pages/          ← one file per screen
+        └── pages/          ← one file per screen (Friends.jsx + FriendRoom.jsx = study buddies)
 ```

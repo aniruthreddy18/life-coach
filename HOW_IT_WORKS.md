@@ -337,6 +337,35 @@ open 2 → "Pilla em antundhi ra…", and so on. All templates, so it costs noth
 
 ---
 
+## 7b. Study buddies — `friends.js`, `duels.js`, `db/friends.sql`
+
+**Matching without AI.** `matchScore()` compares two profiles and adds points: same subject (45),
+same level (20), same goal (15), similar daily time (10), same language (10). It also returns the
+*reasons* ("Both DSA + Java · Intermediate"). This is a **recommendation algorithm**, just rules.
+
+**One row per pair.** A friend request is a row in `friendships` (`status = 'pending'`); accepting
+changes it to `'accepted'`. A **unique index on `least(a, b), greatest(a, b)`** makes "A→B" and "B→A"
+the same pair, so two people can never have two rows.
+
+**Authorization on every call.** `getFriendship(uid, id)` returns the friendship only if YOU are in it
+and it's accepted. Chat, duels and quizzes all go through it, so Kiran can't read Aniruth and Rahul's chat
+even by guessing the id (try it: you get `404`).
+
+**Polling vs real-time.** The chat asks `GET /messages?after=<last id>` every 4 seconds. Simple and
+reliable. (The "real-time" upgrade would be WebSockets or Supabase Realtime: a good exercise later.)
+
+**Fair duels.** Questions are stored WITH the answers in `duels.questions`, but `duelView()` only sends
+`correct_index` after you submit. Never trust the browser: the server grades. "One try only" is enforced by
+the database: `ON CONFLICT … DO UPDATE … WHERE submitted_at IS NULL`.
+
+**Race conditions.** If both friends open the duel at the same second, both try to create it.
+`UNIQUE (friendship_id, date)` + `ON CONFLICT DO NOTHING` keeps exactly one; the other request reads it.
+
+**Jobs.** `DUEL_END_TIME` (23:55) freezes everyone's points, picks winners and sends the funny result.
+If the server was off, the duel is finalized the next time someone opens it.
+
+---
+
 ## 8. Saving money: the cost-smart design 💰
 
 AI APIs charge per **token** (≈ ¾ of a word), for what you send AND what you get back.
@@ -414,7 +443,9 @@ Run `npm run dev`. Each change shows up instantly when you save.
 8. **Hard, AI:** a "Quiz me" button that asks the AI for 5 MCQs on this week's topic and saves the score in a new `quiz_results` table.
 9. **Easy, fun:** add 5 of your own lines to `GREETINGS.te` in `server/src/messages.js`. Open the app 5 times.
 10. **Medium, SQL:** in the Supabase SQL Editor, find who opened the app most: `select name, app_opens from profiles order by app_opens desc;`
-11. **Hard, full-stack:** a "Friends leaderboard" page: each student's streak (needs a new route that reads OTHER students' data carefully: only names + streaks!).
+11. **Medium, full-stack:** a "Friends leaderboard": all your friends ranked by duel wins this week.
+11b. **Hard, real-time:** replace chat polling with WebSockets (`ws` library) so messages arrive instantly.
+11c. **Hard, product:** study groups of 3–5 with a group duel.
 12. **Hard, DevOps:** deploy the server (e.g. Render/Railway). The database is already online, so then notifications reach your phone 24/7.
 
 Stuck? Ask me. Bring the error message and the file you changed.

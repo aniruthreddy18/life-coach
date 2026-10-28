@@ -81,24 +81,31 @@ function serve(row) {
   };
 }
 
-// 5 questions: 2 easy, 2 medium, 1 hard, spread across the topics.
-// "topic = ANY($1)" means "topic is one of the values in this array".
-export async function pickQuestions(topics, count = 5) {
-  const want = { easy: 2, medium: 2, hard: 1 };
+// 5 questions: 2 easy, 2 medium, 1 hard, spread across the topics
+// (10 questions: 4 / 4 / 2). "topic = ANY($1)" means "topic is one of
+// the values in this array". exclude = question texts to skip (e.g. the
+// ones two friends already got in earlier duels).
+export async function pickQuestions(topics, count = 5, exclude = []) {
+  const easy = Math.round(count * 0.4), medium = Math.round(count * 0.4);
+  const want = { easy, medium, hard: count - easy - medium };
   const picked = [];
   for (const [difficulty, n] of Object.entries(want)) {
     picked.push(
       ...(await all(
-        "SELECT * FROM question_bank WHERE topic = ANY($1) AND difficulty = $2 ORDER BY random() LIMIT $3",
-        topics, difficulty, n,
+        `SELECT * FROM question_bank
+          WHERE topic = ANY($1) AND difficulty = $2 AND NOT (question = ANY($4))
+          ORDER BY random() LIMIT $3`,
+        topics, difficulty, n, exclude,
       )),
     );
   }
   // Not enough of one difficulty? Top up with any level.
   if (picked.length < count) {
     const extra = await all(
-      "SELECT * FROM question_bank WHERE topic = ANY($1) AND NOT (id = ANY($2)) ORDER BY random() LIMIT $3",
-      topics, picked.map((r) => r.id), count - picked.length,
+      `SELECT * FROM question_bank
+        WHERE topic = ANY($1) AND NOT (id = ANY($2)) AND NOT (question = ANY($4))
+        ORDER BY random() LIMIT $3`,
+      topics, picked.map((r) => r.id), count - picked.length, exclude,
     );
     picked.push(...extra);
   }
@@ -106,12 +113,13 @@ export async function pickQuestions(topics, count = 5) {
 }
 
 export async function saveQuestions(topic, questions) {
-  const difficulties = ["easy", "easy", "medium", "medium", "hard"];
+  // First 40% easy, next 40% medium, the rest hard (the AI writes them in that order)
+  const difficultyAt = (i) => (i < questions.length * 0.4 ? "easy" : i < questions.length * 0.8 ? "medium" : "hard");
   for (const [i, q] of questions.entries()) {
     await run(
       `INSERT INTO question_bank (topic, question, options, correct_index, difficulty, source)
        VALUES ($1, $2, $3, $4, $5, 'ai') ON CONFLICT (topic, question) DO NOTHING`,
-      topic, q.question, JSON.stringify(q.options), q.correct_index, difficulties[i] ?? "medium",
+      topic, q.question, JSON.stringify(q.options), q.correct_index, difficultyAt(i),
     );
   }
 }

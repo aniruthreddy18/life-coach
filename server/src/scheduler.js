@@ -19,6 +19,7 @@ import { getTasks } from "./state.js";
 import { ensureTodayTasks, generateWeeklyReport } from "./coach.js";
 import { notifyUser } from "./push.js";
 import { eveningNote, nudgeNote, reportNote } from "./messages.js";
+import { finalizeDay } from "./duels.js";
 
 function toCron(hhmm, fallback) {
   const [h, m] = (hhmm || fallback).split(":").map(Number);
@@ -69,6 +70,16 @@ export const jobs = {
     if (!checkedIn) await notifyUser(p.user_id, "Coach 😤", nudgeNote(p), "/checkin");
   }),
 
+  // Late night: close today's duels, pick winners, send the funny results
+  duels: async () => {
+    try {
+      const n = await finalizeDay();
+      if (n) console.log(`⚔️  Finalized ${n} duel(s)`);
+    } catch (err) {
+      console.error("Duel job failed:", err.message);
+    }
+  },
+
   // Sunday: weekly report
   weekly: forEachStudent("Weekly report", async (p) => {
     const report = await generateWeeklyReport(p.user_id);
@@ -81,5 +92,6 @@ export function startScheduler() {
   cron.schedule(toCron(process.env.EVENING_TIME, "21:00"), jobs.evening);
   cron.schedule(toCron(process.env.NUDGE_TIME, "22:30"), jobs.nudge);
   cron.schedule("0 20 * * 0", jobs.weekly); // Sunday 8 PM
-  console.log("⏰ Scheduler running (morning plan, evening check-in, nudge, weekly report)");
+  cron.schedule(toCron(process.env.DUEL_END_TIME, "23:55"), jobs.duels);
+  console.log("⏰ Scheduler running (morning plan, evening check-in, nudge, duel results, weekly report)");
 }

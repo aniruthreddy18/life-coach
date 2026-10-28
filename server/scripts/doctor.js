@@ -203,7 +203,8 @@ if (dbUrl) {
     ok("connected");
     const { rows } = await pool.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'");
     const have = new Set(rows.map((r) => r.table_name));
-    const need = ["app_users", "profiles", "milestones", "tasks", "checkins", "messages", "memories", "reports", "push_subscriptions", "ai_usage", "question_bank", "roadmap_templates", "explanations", "app_settings"];
+    const need = ["app_users", "profiles", "milestones", "tasks", "checkins", "messages", "memories", "reports", "push_subscriptions", "ai_usage", "question_bank", "roadmap_templates", "explanations", "app_settings",
+      "friendships", "friend_messages", "blocks", "user_reports", "duels", "duel_entries", "weekly_quizzes", "weekly_quiz_entries"];
     const missing = need.filter((t) => !have.has(t));
     if (missing.length) bad(`missing tables: ${missing.join(", ")}`, "Run: npm run db:setup");
     else {

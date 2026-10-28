@@ -11,14 +11,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { pool } from "../src/db.js";
 
-const schemaFile = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "db", "schema.sql");
+// Run in this order: the base tables, then the study-buddies tables
+const dbDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "db");
+const files = ["schema.sql", "friends.sql"].map((f) => path.join(dbDir, f));
 
 if (!process.env.DATABASE_URL) {
   console.error("\n❌ DATABASE_URL is missing in server/.env (see the comments in .env.example).\n");
   process.exit(1);
 }
 try {
-  await pool.query(fs.readFileSync(schemaFile, "utf8")); // pg runs a multi-statement file in one go
+  for (const file of files) await pool.query(fs.readFileSync(file, "utf8")); // pg runs a multi-statement file in one go
   const { rows } = await pool.query(
     "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name",
   );

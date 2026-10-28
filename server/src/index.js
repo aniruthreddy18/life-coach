@@ -23,6 +23,7 @@ import { router as chat } from "./routes/chat.js";
 import { router as reports } from "./routes/reports.js";
 import { router as notifications } from "./routes/notifications.js";
 import { router as usage } from "./routes/usage.js";
+import { router as friendsRoutes } from "./routes/friends.js";
 import { requireUser, publicAuthConfig, initAuth, signInWithEmail, isEmail, AUTH_MODE } from "./auth.js";
 import { startScheduler } from "./scheduler.js";
 import { initPush } from "./push.js";
@@ -63,6 +64,7 @@ app.use("/api", chat);
 app.use("/api", reports);
 app.use("/api", notifications);
 app.use("/api", usage);
+app.use("/api", friendsRoutes);
 app.use("/api", (req, res) => res.status(404).json({ error: "No such API route" }));
 
 // --- Serve the built React app (after `npm run build`) ---

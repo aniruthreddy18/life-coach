@@ -171,3 +171,76 @@ export const morningNote = (profile, tasks) =>
 export const eveningNote = (profile, done, total) => pick(EVENING, profile.language, { name: profile.name, done, total });
 export const nudgeNote = (profile) => pick(NUDGE, profile.language, { name: profile.name });
 export const reportNote = (profile, grade) => fill(REPORT[langOf(profile.language)], { grade });
+
+// =============================================================
+// STUDY BUDDIES 🤝 — pokes, requests, duel results
+// {name} = the person receiving it, {friend} = the other person
+// =============================================================
+const POKE = {
+  te: [
+    "Rey {name}, chaduvu ra! {friend} ninnu chustunnadu 👀📚",
+    "{friend} poked you 👉 Phone pakkana pettu, task start chey!",
+    "Oye {name}, {friend} already start chesadu. Nuvvu enti? 😤",
+    "{friend}: 'Duel lo odipothav ra' 😂 Prove them wrong!",
+  ],
+  hi: [
+    "Oye {name}, padhai kar! {friend} dekh raha hai 👀📚",
+    "{friend} ne poke kiya 👉 Phone rakh, kaam shuru kar!",
+    "{friend} toh shuru ho gaya. Tu kab? 😤",
+  ],
+  en: [
+    "Hey {name}, {friend} is watching you study 👀📚",
+    "{friend} poked you 👉 Phone down, task up!",
+    "{friend} already started. What's your excuse? 😤",
+  ],
+};
+
+const DUEL_WIN = {
+  te: [
+    "🏆 Kummesav {name}! {friend} ni {me}–{them} tho kottesav 🔥",
+    "🏆 Winner winner biryani dinner! {me}–{them} vs {friend} 🍗",
+    "🏆 {friend} ki class teeskunav ra! {me}–{them} 😎",
+  ],
+  hi: [
+    "🏆 Jeet gaya {name}! {friend} ko {me}–{them} se haraya 🔥",
+    "🏆 Winner winner chicken dinner! {me}–{them} vs {friend} 🍗",
+  ],
+  en: [
+    "🏆 You beat {friend} {me}–{them} today, {name}! 🔥",
+    "🏆 Winner winner! {me}–{them} vs {friend} 😎",
+  ],
+};
+
+const DUEL_LOSE = {
+  te: [
+    "😅 Ivala {friend} gelichadu ({them}–{me}). Repu revenge teeskundam 💪",
+    "Rey {name}, {friend} ninnu kottesadu ({them}–{me}) 😂 Repu chupinchu!",
+    "Odipoyav bro ({me}–{them}). Kastapadu, lekapothe MG ayithav bida 😂",
+  ],
+  hi: [
+    "😅 Aaj {friend} jeet gaya ({them}–{me}). Kal badla lenge 💪",
+    "Bhai {friend} ne hara diya ({them}–{me}) 😂 Kal dikha de!",
+  ],
+  en: [
+    "😅 {friend} won today ({them}–{me}). Revenge tomorrow 💪",
+    "{friend} got you today ({them}–{me}). Comeback time! 🔁",
+  ],
+};
+
+const DUEL_TIE = {
+  te: ["🤝 Tie ra! {me}–{them}. Repu decide cheddam ⚔️"],
+  hi: ["🤝 Barabar! {me}–{them}. Kal faisla hoga ⚔️"],
+  en: ["🤝 It's a tie, {me}–{them}. Tomorrow decides it ⚔️"],
+};
+
+const rotate = (lists, language, values) => {
+  const list = lists[langOf(language)];
+  return fill(list[Math.floor(Math.random() * list.length)], values);
+};
+
+export const pokeNote = (to, fromName) => rotate(POKE, to.language, { name: to.name, friend: fromName });
+export function duelResultNote(me, friendName, myPoints, theirPoints, won) {
+  const values = { name: me.name, friend: friendName, me: myPoints, them: theirPoints };
+  if (won === null) return rotate(DUEL_TIE, me.language, values);
+  return rotate(won ? DUEL_WIN : DUEL_LOSE, me.language, values);
+}

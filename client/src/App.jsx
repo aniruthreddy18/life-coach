@@ -15,6 +15,7 @@ import { Routes, Route, NavLink, Navigate, Link, useLocation, useNavigate } from
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   HouseIcon, ChatCircleDotsIcon, CheckCircleIcon, MapTrifoldIcon, ChartBarIcon, GearSixIcon, WifiSlashIcon, XIcon, WrenchIcon,
+  UsersThreeIcon,
 } from "@phosphor-icons/react";
 import { api, setUnauthorizedHandler, disableNotificationsHere } from "./api.js";
 import { initAuth, getSession, signOut as endSession, onSignedOut, authMode } from "./auth.js";
@@ -29,12 +30,15 @@ const CheckIn = lazy(() => import("./pages/CheckIn.jsx"));
 const Roadmap = lazy(() => import("./pages/Roadmap.jsx"));
 const Reports = lazy(() => import("./pages/Reports.jsx"));
 const Settings = lazy(() => import("./pages/Settings.jsx"));
+const Friends = lazy(() => import("./pages/Friends.jsx"));
+const FriendRoom = lazy(() => import("./pages/FriendRoom.jsx"));
 
 const TABS = [
   { to: "/", icon: HouseIcon, label: "Today" },
   { to: "/chat", icon: ChatCircleDotsIcon, label: "Coach" },
   { to: "/checkin", icon: CheckCircleIcon, label: "Check-in" },
   { to: "/roadmap", icon: MapTrifoldIcon, label: "Plan" },
+  { to: "/friends", icon: UsersThreeIcon, label: "Friends" },
   { to: "/reports", icon: ChartBarIcon, label: "Reports" },
 ];
 
@@ -43,6 +47,7 @@ export default function App() {
   const [status, setStatus] = useState("loading"); // loading | signedOut | onboarding | ready | error | config
   const [user, setUser] = useState(null);
   const [hello, setHello] = useState(null);
+  const [badge, setBadge] = useState(0); // friend requests + unread messages
   const saidHello = useRef(false);
   const location = useLocation();
   const navigate = useNavigate();
@@ -90,6 +95,15 @@ export default function App() {
     return () => unsubscribe();
   }, [routeSignedIn]);
 
+  // Red dot on the Friends tab: check on every page change and every minute
+  useEffect(() => {
+    if (status !== "ready") return;
+    const check = () => api("/friends/badge").then((b) => setBadge(b.count)).catch(() => {});
+    check();
+    const timer = setInterval(check, 60_000);
+    return () => clearInterval(timer);
+  }, [status, location.pathname]);
+
   // Every time the app opens: one funny hello (the server counts the opens)
   useEffect(() => {
     if (status !== "ready" || saidHello.current) return;
@@ -117,6 +131,8 @@ export default function App() {
               <Route path="/checkin" element={<CheckIn />} />
               <Route path="/roadmap" element={<Roadmap />} />
               <Route path="/reports" element={<Reports />} />
+              <Route path="/friends" element={<Friends />} />
+              <Route path="/friends/:id" element={<FriendRoom />} />
               <Route
                 path="/settings"
                 element={<Settings email={user?.email} onSignOut={signOut} onReset={() => setStatus("onboarding")} />}
@@ -124,7 +140,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </AnimatePresence>
-          <Dock />
+          <Dock badge={badge} />
           <Greeting hello={hello} onClose={() => setHello(null)} />
         </div>
       )}
@@ -203,16 +219,17 @@ function TopBar() {
 
 // Floating glass dock. The highlighted "pill" is ONE element shared
 // between tabs (layoutId), so it slides from tab to tab.
-function Dock() {
+function Dock({ badge }) {
   return (
     <nav className="dock" aria-label="Main">
       {TABS.map(({ to, icon: Icon, label }) => (
-        <NavLink key={to} to={to} end className={({ isActive }) => `dock-item ${isActive ? "active" : ""}`}>
+        <NavLink key={to} to={to} end={to !== "/friends"} className={({ isActive }) => `dock-item ${isActive ? "active" : ""}`}>
           {({ isActive }) => (
             <>
               {isActive && <motion.span layoutId="dock-pill" className="dock-pill" transition={spring} />}
               <Icon size={22} weight={isActive ? "fill" : "regular"} />
               <span>{label}</span>
+              {to === "/friends" && badge > 0 && <i className="dock-dot" aria-label={`${badge} new`} />}
             </>
           )}
         </NavLink>

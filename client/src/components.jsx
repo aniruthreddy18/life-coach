@@ -304,3 +304,97 @@ export function RichText({ text }) {
     return <p key={b}>{lines.map((l, i) => <span key={i}>{i > 0 && <br />}{inline(l, `${b}-${i}`)}</span>)}</p>;
   });
 }
+
+// ---- Segmented tabs with a sliding pill ----------------------------------
+// options: [{ value, label, badge? }]. `id` keeps pills of different
+// controls from sliding into each other.
+export function Segmented({ id, value, onChange, options, className = "" }) {
+  return (
+    <div className={`segmented ${className}`} role="tablist">
+      {options.map((o) => (
+        <button key={o.value} role="tab" aria-selected={value === o.value} aria-pressed={value === o.value} onClick={() => onChange(o.value)}>
+          {value === o.value && <motion.span layoutId={`seg-${id}`} className="seg-pill" transition={spring} />}
+          <span>{o.label}</span>
+          {o.badge > 0 && <span className="badge">{o.badge}</span>}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---- Round avatar with the first letter of a name -----------------------
+// The colour comes from the name, so each person always gets the same one.
+const AVATAR_COLORS = ["#0a4174", "#49769f", "#4e8ea2", "#1f6f8b", "#2c5d8a", "#5b7fa6"];
+export function Avatar({ name = "?", size = 44 }) {
+  const hash = [...name].reduce((h, c) => h + c.charCodeAt(0), 0);
+  return (
+    <span className="avatar-circle" aria-hidden style={{ width: size, height: size, fontSize: size * 0.42, background: AVATAR_COLORS[hash % AVATAR_COLORS.length] }}>
+      {name.trim()[0]?.toUpperCase() ?? "?"}
+    </span>
+  );
+}
+
+// ---- A multiple-choice quiz (used by the duel + weekly quiz) -------------
+// questions: [{ question, options }] -> onSubmit([chosen index or null, …])
+export function QuizRunner({ questions, onSubmit, submitLabel = "Submit" }) {
+  const [chosen, setChosen] = useState({});
+  const [busy, setBusy] = useState(false);
+  const answered = Object.keys(chosen).length;
+  async function submit() {
+    setBusy(true);
+    try {
+      await onSubmit(questions.map((_, i) => chosen[i] ?? null));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="quiz-run">
+      {questions.map((q, i) => (
+        <Card key={i} className="quiz-card">
+          <p className="quiz-q"><span className="num faint">{String(i + 1).padStart(2, "0")}</span>&nbsp; {q.question}</p>
+          <div className="options">
+            {q.options.map((opt, j) => (
+              <motion.button key={j} className={`option ${chosen[i] === j ? "selected" : ""}`} onClick={() => setChosen({ ...chosen, [i]: j })} whileTap={{ scale: 0.98 }}>
+                <kbd>{String.fromCharCode(65 + j)}</kbd>
+                {opt}
+              </motion.button>
+            ))}
+          </div>
+        </Card>
+      ))}
+      <div className="quiz-submit">
+        <span className="muted">{answered}/{questions.length} answered</span>
+        <Button variant="primary" className="lg" onClick={submit} disabled={busy || answered === 0}>
+          {busy ? "Checking…" : submitLabel}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// After submitting: every question with the right answer and yours
+export function QuizReview({ questions }) {
+  return (
+    <div className="quiz-run">
+      {questions.map((q, i) => {
+        const right = q.chosen === q.correct_index;
+        return (
+          <Card key={i} className="quiz-card">
+            <p className="quiz-q">
+              <span className={`tag ${right ? "good" : "bad"}`}>{right ? "✓" : q.chosen == null ? "–" : "✗"}</span>&nbsp; {q.question}
+            </p>
+            <div className="options">
+              {q.options.map((opt, j) => (
+                <div key={j} className={`option static ${j === q.correct_index ? "correct" : ""} ${j === q.chosen && !right ? "wrong" : ""}`}>
+                  <kbd>{String.fromCharCode(65 + j)}</kbd>
+                  {opt}
+                </div>
+              ))}
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
