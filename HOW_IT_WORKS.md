@@ -207,6 +207,13 @@ Or **SQL Editor** → try `select name, app_opens from profiles;`
 
 ## 5b. Sign-in & security — `client/src/supabase.js`, `server/src/auth.js`
 
+**Two sign-in modes** (`AUTH_MODE` in `server/.env`):
+- `email` (on now): you type your email → `POST /api/auth/email` → the server finds or creates your row in
+  `app_users` and signs a token for you with a secret only it knows. Quick, but it doesn't prove the email is yours.
+- `otp` (later): the same, but Supabase first proves it's your inbox by emailing a code. Explained below.
+
+Both modes land on the same `app_users` row (matched by email), so switching modes keeps everyone's data.
+
 **How "email + code" sign-in works (OTP = one-time password):**
 ```
 You: aniruth@gmail.com → [Send code]
@@ -226,7 +233,7 @@ Anyone can read it, but nobody can change it without breaking the signature.
 **How the server trusts it** (`auth.js`):
 1. Every API call sends `Authorization: Bearer <token>` (`api.js` adds it).
 2. `requireUser` downloads Supabase's **public** keys once (the "JWKS") and checks the signature + expiry.
-3. Valid → `req.user = { id, email }`. Invalid/expired → `401` → the app signs you out.
+3. Valid → look up your `app_users` row by email → `req.user = { id, email }`. (Email mode: the server checks its own signature instead.) Invalid/expired → `401` → the app signs you out.
 
 **Who sees what?** Every query has `WHERE user_id = $1` with `req.user.id`, so Ravi can never read
 Aniruth's chats, even by guessing a task id. On top of that, **Row Level Security (RLS)** is ON for every

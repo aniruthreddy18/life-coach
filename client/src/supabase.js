@@ -1,5 +1,5 @@
 // =============================================================
-// supabase.js — the sign-in client (Supabase Auth)
+// supabase.js — the CODE sign-in client (Supabase Auth, AUTH_MODE=otp)
 // -------------------------------------------------------------
 // The browser talks to Supabase ONLY for signing in:
 //   1. signInWithOtp({ email })  -> Supabase emails a 6-digit code
@@ -15,11 +15,9 @@
 // =============================================================
 let client = null;
 
-export async function initSupabase() {
+// config comes from GET /api/config (auth.js fetches it)
+export async function initSupabase({ supabaseUrl, publishableKey }) {
   if (client) return client;
-  const res = await fetch("/api/config");
-  if (!res.ok) throw Object.assign(new Error("Server not reachable"), { kind: "server" });
-  const { supabaseUrl, publishableKey } = await res.json();
   if (!supabaseUrl || !publishableKey) throw Object.assign(new Error("Supabase isn't configured"), { kind: "config" });
   // Loaded on demand, so the library downloads in parallel with the rest of the app
   const { createClient } = await import("@supabase/supabase-js");
@@ -31,13 +29,6 @@ export async function initSupabase() {
 
 // After initSupabase() has run once, anyone can grab the client
 export const supabase = () => client;
-
-// The current access token (refreshed automatically if it expired)
-export async function accessToken() {
-  if (!client) return null;
-  const { data } = await client.auth.getSession();
-  return data.session?.access_token ?? null;
-}
 
 // Turn Supabase's error codes into messages a person understands
 export function friendlyAuthError(error) {

@@ -6,7 +6,7 @@
 //   1. server/.env exists and has the right values
 //   2. your AI key works (OpenRouter: key valid, credits left,
 //      models exist, a real test call for "smart" and "fast")
-//   3. Supabase sign-in is reachable (URL + publishable key)
+//   3. sign-in settings (and Supabase, if AUTH_MODE=otp)
 //   4. the database connects and all the tables exist
 // Nothing here costs more than a fraction of a cent.
 // =============================================================
@@ -157,33 +157,38 @@ if (provider === "none") {
   }
 }
 
-// ---- 3. Supabase sign-in -------------------------------------------------------
-section("3. Supabase sign-in (email OTP)");
-const supabaseUrl = checkValue("SUPABASE_URL").replace(/\/$/, "");
-const publishable = checkValue("SUPABASE_PUBLISHABLE_KEY");
-if (supabaseUrl && !/^https:\/\/[a-z0-9]+\.supabase\.co$/.test(supabaseUrl)) {
-  warn(`SUPABASE_URL "${supabaseUrl}" doesn't look like https://<project>.supabase.co`);
-}
-if (supabaseUrl && publishable) {
-  try {
-    const jwks = await getJSON(`${supabaseUrl}/auth/v1/.well-known/jwks.json`);
-    if (jwks.status === 200) ok(`sign-in service reachable (${jwks.body?.keys?.length ?? 0} signing key(s))`);
-    else bad(`sign-in service answered HTTP ${jwks.status}.`, "Check SUPABASE_URL. Is the project paused? Open the dashboard and restore it.");
-
-    const settings = await getJSON(`${supabaseUrl}/auth/v1/settings`, { apikey: publishable });
-    if (settings.status === 401) bad("SUPABASE_PUBLISHABLE_KEY was rejected.", "Copy it from Dashboard → Project Settings → API Keys.");
-    else if (settings.status === 200) {
-      if (settings.body?.external?.email === false) bad("Email sign-in is turned OFF.", "Dashboard → Authentication → Sign In / Providers → Email → enable.");
-      else ok("email sign-in is enabled");
-      if (settings.body?.disable_signup) warn("New sign-ups are disabled — only existing users can sign in.");
-    }
-  } catch (err) {
-    bad(`Can't reach Supabase: ${err.cause?.code ?? err.message}`, "Check your internet connection.");
+// ---- 3. Sign-in ------------------------------------------------------------------
+const authMode = (process.env.AUTH_MODE || "email").toLowerCase() === "otp" ? "otp" : "email";
+section(`3. Sign-in (AUTH_MODE=${authMode})`);
+if (authMode === "email") {
+  ok("email-only sign-in: type your email, no code (set AUTH_MODE=otp later for codes)");
+} else {
+  const supabaseUrl = checkValue("SUPABASE_URL").replace(/\/$/, "");
+  const publishable = checkValue("SUPABASE_PUBLISHABLE_KEY");
+  if (supabaseUrl && !/^https:\/\/[a-z0-9]+\.supabase\.co$/.test(supabaseUrl)) {
+    warn(`SUPABASE_URL "${supabaseUrl}" doesn't look like https://<project>.supabase.co`);
   }
+  if (supabaseUrl && publishable) {
+    try {
+      const jwks = await getJSON(`${supabaseUrl}/auth/v1/.well-known/jwks.json`);
+      if (jwks.status === 200) ok(`sign-in service reachable (${jwks.body?.keys?.length ?? 0} signing key(s))`);
+      else bad(`sign-in service answered HTTP ${jwks.status}.`, "Check SUPABASE_URL. Is the project paused? Open the dashboard and restore it.");
+
+      const settings = await getJSON(`${supabaseUrl}/auth/v1/settings`, { apikey: publishable });
+      if (settings.status === 401) bad("SUPABASE_PUBLISHABLE_KEY was rejected.", "Copy it from Dashboard → Project Settings → API Keys.");
+      else if (settings.status === 200) {
+        if (settings.body?.external?.email === false) bad("Email sign-in is turned OFF.", "Dashboard → Authentication → Sign In / Providers → Email → enable.");
+        else ok("email sign-in is enabled");
+        if (settings.body?.disable_signup) warn("New sign-ups are disabled — only existing users can sign in.");
+      }
+    } catch (err) {
+      bad(`Can't reach Supabase: ${err.cause?.code ?? err.message}`, "Check your internet connection.");
+    }
+  }
+  console.log("     ℹ️  Can't be checked from here (do these once in the dashboard — see README):");
+  console.log("        • Authentication → Emails → Templates: \"Magic Link\" + \"Confirm signup\" show {{ .Token }}");
+  console.log("        • Authentication → Emails → SMTP Settings: your Gmail + app password (so friends get codes)");
 }
-console.log("     ℹ️  Can't be checked from here (do these once in the dashboard — see README):");
-console.log("        • Authentication → Emails → Templates: \"Magic Link\" + \"Confirm signup\" show {{ .Token }}");
-console.log("        • Authentication → Emails → SMTP Settings: your Gmail + app password (so friends get codes)");
 
 // ---- 4. Database ------------------------------------------------------------------
 section("4. Database (Supabase Postgres)");
@@ -198,13 +203,13 @@ if (dbUrl) {
     ok("connected");
     const { rows } = await pool.query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'");
     const have = new Set(rows.map((r) => r.table_name));
-    const need = ["profiles", "milestones", "tasks", "checkins", "messages", "memories", "reports", "push_subscriptions", "ai_usage", "question_bank", "roadmap_templates", "explanations", "app_settings"];
+    const need = ["app_users", "profiles", "milestones", "tasks", "checkins", "messages", "memories", "reports", "push_subscriptions", "ai_usage", "question_bank", "roadmap_templates", "explanations", "app_settings"];
     const missing = need.filter((t) => !have.has(t));
     if (missing.length) bad(`missing tables: ${missing.join(", ")}`, "Run: npm run db:setup");
     else {
       ok(`all ${need.length} tables exist`);
-      const users = await pool.query("SELECT COUNT(*) AS n FROM profiles");
-      ok(`${users.rows[0].n} student(s) onboarded so far`);
+      const users = await pool.query("SELECT (SELECT COUNT(*) FROM app_users) AS signed, (SELECT COUNT(*) FROM profiles) AS onboarded");
+      ok(`${users.rows[0].signed} student(s) signed in, ${users.rows[0].onboarded} finished onboarding`);
     }
   } catch (err) {
     const fixes = {

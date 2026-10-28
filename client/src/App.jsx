@@ -17,7 +17,7 @@ import {
   HouseIcon, ChatCircleDotsIcon, CheckCircleIcon, MapTrifoldIcon, ChartBarIcon, GearSixIcon, WifiSlashIcon, XIcon, WrenchIcon,
 } from "@phosphor-icons/react";
 import { api, setUnauthorizedHandler, disableNotificationsHere } from "./api.js";
-import { initSupabase, supabase } from "./supabase.js";
+import { initAuth, getSession, signOut as endSession, onSignedOut, authMode } from "./auth.js";
 import { PageSkeleton, spring, softSpring } from "./components.jsx";
 import SignIn from "./pages/SignIn.jsx";
 // CODE SPLITTING: each page is downloaded only when it's first needed,
@@ -62,7 +62,7 @@ export default function App() {
 
   const signOut = useCallback(async () => {
     await disableNotificationsHere();
-    await supabase()?.auth.signOut({ scope: "local" }); // this device only
+    await endSession(); // this device only
     saidHello.current = false;
     setHello(null);
     setUser(null);
@@ -74,20 +74,17 @@ export default function App() {
   useEffect(() => {
     // The server said "who are you?" -> the session is dead, sign in again
     setUnauthorizedHandler(() => {
-      supabase()?.auth.signOut({ scope: "local" });
+      endSession();
       setStatus("signedOut");
     });
     let unsubscribe = () => {};
-    initSupabase()
-      .then(async (sb) => {
-        const { data } = await sb.auth.getSession(); // saved in this browser?
-        if (data.session) routeSignedIn(data.session);
+    initAuth()
+      .then(async () => {
+        const session = await getSession(); // saved in this browser?
+        if (session) routeSignedIn(session);
         else setStatus("signedOut");
-        // Signed out in another tab, or the session couldn't be refreshed
-        const { data: sub } = sb.auth.onAuthStateChange((event) => {
-          if (event === "SIGNED_OUT") setStatus("signedOut");
-        });
-        unsubscribe = () => sub.subscription.unsubscribe();
+        // Signed out in another tab
+        unsubscribe = onSignedOut(() => setStatus("signedOut"));
       })
       .catch((err) => setStatus(err.kind === "config" ? "config" : "error"));
     return () => unsubscribe();
@@ -108,7 +105,7 @@ export default function App() {
       {status === "loading" && <PageSkeleton />}
       {status === "error" && <ServerDown />}
       {status === "config" && <NotConfigured />}
-      {status === "signedOut" && <SignIn onSignedIn={routeSignedIn} />}
+      {status === "signedOut" && <SignIn mode={authMode()} onSignedIn={routeSignedIn} />}
       {status === "onboarding" && <Onboarding onDone={() => setStatus("ready")} />}
       {status === "ready" && (
         <div className="shell">

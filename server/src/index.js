@@ -23,7 +23,7 @@ import { router as chat } from "./routes/chat.js";
 import { router as reports } from "./routes/reports.js";
 import { router as notifications } from "./routes/notifications.js";
 import { router as usage } from "./routes/usage.js";
-import { requireUser, supabasePublicConfig } from "./auth.js";
+import { requireUser, publicAuthConfig, initAuth, signInWithEmail, isEmail, AUTH_MODE } from "./auth.js";
 import { startScheduler } from "./scheduler.js";
 import { initPush } from "./push.js";
 import { PROVIDER_NAME, MODELS } from "./ai.js";
@@ -44,7 +44,15 @@ app.use((req, res, next) => {
 
 // --- Public routes (no sign-in needed) ---
 app.get("/api/health", (req, res) => res.json({ ok: true }));
-app.get("/api/config", (req, res) => res.json(supabasePublicConfig())); // the browser needs these to show the sign-in screen
+app.get("/api/config", (req, res) => res.json(publicAuthConfig())); // which sign-in screen to show
+
+// Email sign-in (AUTH_MODE=email): type your email -> get a session token
+app.post("/api/auth/email", async (req, res) => {
+  if (AUTH_MODE !== "email") return res.status(403).json({ error: "Email-only sign-in is turned off. Use the code sign-in." });
+  const email = String(req.body?.email ?? "").trim().toLowerCase();
+  if (!isEmail(email)) return res.status(400).json({ error: "Enter a valid email, like you@gmail.com" });
+  res.json(await signInWithEmail(email));
+});
 app.get("/api/onboarding/questions", listQuestions);
 
 // --- Private routes: the sign-in check runs first ---
@@ -89,6 +97,7 @@ async function start() {
     await pool.query("SELECT 1");
     await seedQuestionBank(); // load the built-in level-test questions (safe every start)
     await initPush(); // notification keys
+    await initAuth(); // session-token secret
   } catch (err) {
     console.error(`❌ Can't use the database: ${err.message}`);
     console.error('   Run "npm run doctor" to find out why (and "npm run db:setup" if the tables are missing).');
@@ -98,6 +107,7 @@ async function start() {
   app.listen(PORT, () => {
     console.log(`✅ Life Coach API running at http://localhost:${PORT}`);
     console.log(`🤖 AI: ${PROVIDER_NAME} — smart: ${MODELS.smart}, fast: ${MODELS.fast}${MODELS.free ? `, free: ${MODELS.free}` : ""}`);
+    console.log(`🔐 Sign-in: ${AUTH_MODE === "email" ? "email only (no code)" : "email + 6-digit code (Supabase OTP)"}`);
     console.log(`💰 Daily AI budget per student: $${DAILY_BUDGET_USD} (over budget → ${MODELS.free ? "free model" : "rules mode"})`);
     startScheduler();
   });

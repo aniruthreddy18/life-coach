@@ -3,9 +3,11 @@
 -- -------------------------------------------------------------
 -- Two kinds of tables:
 --
---   PER-USER tables: every row has a user_id that points to the
---   signed-in person (Supabase's auth.users). Deleting a user
---   deletes all their rows too (ON DELETE CASCADE).
+--   USERS: app_users, one row per email that has signed in.
+--
+--   PER-USER tables: every row has a user_id that points to
+--   app_users. Deleting a user deletes all their rows too
+--   (ON DELETE CASCADE).
 --
 --   SHARED tables: the content library (questions, roadmaps,
 --   explanations) that every student reuses for free.
@@ -17,10 +19,20 @@
 -- password and checks each user's sign-in token before every query.
 -- =============================================================
 
+-- ---------- Users ----------
+-- Sign-in by email (AUTH_MODE=email) or email + code (AUTH_MODE=otp):
+-- both end up here, matched by email.
+create table if not exists public.app_users (
+  id           uuid primary key default gen_random_uuid(),
+  email        text not null unique,
+  created_at   timestamptz not null default now(),
+  last_seen_at timestamptz not null default now()
+);
+
 -- ---------- Per-user tables ----------
 
 create table if not exists public.profiles (
-  user_id        uuid primary key references auth.users (id) on delete cascade,
+  user_id        uuid primary key references public.app_users (id) on delete cascade,
   name           text not null,
   answers        jsonb not null,           -- onboarding answers
   quiz_score     integer,
@@ -36,7 +48,7 @@ create table if not exists public.profiles (
 
 create table if not exists public.milestones (
   id          bigint generated always as identity primary key,
-  user_id     uuid not null references auth.users (id) on delete cascade,
+  user_id     uuid not null references public.app_users (id) on delete cascade,
   week_number integer not null,
   title       text not null,
   focus       text not null,
@@ -46,7 +58,7 @@ create table if not exists public.milestones (
 
 create table if not exists public.tasks (
   id           bigint generated always as identity primary key,
-  user_id      uuid not null references auth.users (id) on delete cascade,
+  user_id      uuid not null references public.app_users (id) on delete cascade,
   date         date not null,
   title        text not null,
   details      text,
@@ -60,7 +72,7 @@ create index if not exists tasks_user_date on public.tasks (user_id, date);
 
 create table if not exists public.checkins (
   id          bigint generated always as identity primary key,
-  user_id     uuid not null references auth.users (id) on delete cascade,
+  user_id     uuid not null references public.app_users (id) on delete cascade,
   date        date not null,
   mood        integer not null check (mood between 1 and 10),
   energy      integer not null check (energy between 1 and 10),
@@ -73,7 +85,7 @@ create table if not exists public.checkins (
 
 create table if not exists public.messages (
   id         bigint generated always as identity primary key,
-  user_id    uuid not null references auth.users (id) on delete cascade,
+  user_id    uuid not null references public.app_users (id) on delete cascade,
   role       text not null check (role in ('user', 'assistant')),
   content    text not null,
   created_at timestamptz not null default now()
@@ -82,7 +94,7 @@ create index if not exists messages_user on public.messages (user_id, id);
 
 create table if not exists public.memories (
   id         bigint generated always as identity primary key,
-  user_id    uuid not null references auth.users (id) on delete cascade,
+  user_id    uuid not null references public.app_users (id) on delete cascade,
   fact       text not null,
   created_at timestamptz not null default now()
 );
@@ -90,7 +102,7 @@ create index if not exists memories_user on public.memories (user_id, id);
 
 create table if not exists public.reports (
   id         bigint generated always as identity primary key,
-  user_id    uuid not null references auth.users (id) on delete cascade,
+  user_id    uuid not null references public.app_users (id) on delete cascade,
   week_start date not null,
   content    jsonb not null,
   created_at timestamptz not null default now()
@@ -99,7 +111,7 @@ create index if not exists reports_user on public.reports (user_id, id);
 
 create table if not exists public.push_subscriptions (
   id           bigint generated always as identity primary key,
-  user_id      uuid not null references auth.users (id) on delete cascade,
+  user_id      uuid not null references public.app_users (id) on delete cascade,
   endpoint     text not null unique,
   subscription jsonb not null
 );
@@ -107,7 +119,7 @@ create index if not exists push_user on public.push_subscriptions (user_id);
 
 create table if not exists public.ai_usage (
   id            bigint generated always as identity primary key,
-  user_id       uuid not null references auth.users (id) on delete cascade,
+  user_id       uuid not null references public.app_users (id) on delete cascade,
   day           date not null,
   feature       text not null,
   model         text not null,
@@ -153,6 +165,7 @@ create table if not exists public.app_settings (
 );
 
 -- ---------- Security: RLS on, no policies = browser gets nothing ----------
+alter table public.app_users          enable row level security;
 alter table public.profiles           enable row level security;
 alter table public.milestones         enable row level security;
 alter table public.tasks              enable row level security;

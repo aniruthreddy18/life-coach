@@ -7,7 +7,7 @@
 // The server checks it and only shows YOUR data. If the server says
 // 401 ("who are you?"), the session is dead, so we sign you out.
 // =============================================================
-import { accessToken } from "./supabase.js";
+import { accessToken } from "./auth.js";
 
 let onUnauthorized = () => {};
 export const setUnauthorizedHandler = (fn) => (onUnauthorized = fn);

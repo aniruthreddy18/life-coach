@@ -1,6 +1,9 @@
 // =============================================================
-// SignIn.jsx — sign in with your email + a 6-digit code (OTP)
+// SignIn.jsx — the sign-in screen
 // -------------------------------------------------------------
+// mode "email" (AUTH_MODE=email): type your email -> you're in.
+//
+// mode "otp" (AUTH_MODE=otp), two steps:
 // Step 1 "email": you type your Gmail -> Supabase emails a code.
 // Step 2 "code":  you type the code   -> Supabase gives a session.
 // No passwords to remember (or leak). The same screen works for
@@ -11,6 +14,7 @@ import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ArrowRightIcon, ArrowLeftIcon, EnvelopeSimpleIcon, ShieldCheckIcon, PaperPlaneTiltIcon } from "@phosphor-icons/react";
 import { supabase, friendlyAuthError } from "../supabase.js";
+import { signInWithEmail } from "../auth.js";
 import { Button, softSpring } from "../components.jsx";
 
 const RESEND_SECONDS = 60; // Supabase allows one code per email per minute
@@ -18,7 +22,8 @@ const stagger = { show: { transition: { staggerChildren: 0.07, delayChildren: 0.
 const rise = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0, transition: softSpring } };
 const isEmail = (v) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v);
 
-export default function SignIn({ onSignedIn }) {
+export default function SignIn({ mode = "email", onSignedIn }) {
+  const withCode = mode === "otp";
   const [step, setStep] = useState("email"); // email | code
   const [email, setEmail] = useState(() => localStorage.getItem("last-email") ?? "");
   const [code, setCode] = useState("");
@@ -40,12 +45,21 @@ export default function SignIn({ onSignedIn }) {
     if (!isEmail(clean)) return setError("Enter a valid email, like you@gmail.com");
     setBusy(true);
     setError("");
-    const { error } = await supabase().auth.signInWithOtp({ email: clean, options: { shouldCreateUser: true } });
-    setBusy(false);
-    if (error) return setError(friendlyAuthError(error));
     try {
       localStorage.setItem("last-email", clean);
     } catch {}
+    if (!withCode) {
+      // Email mode: no code, the server signs you in straight away
+      try {
+        return onSignedIn(await signInWithEmail(clean));
+      } catch (err) {
+        setBusy(false);
+        return setError(err.message);
+      }
+    }
+    const { error } = await supabase().auth.signInWithOtp({ email: clean, options: { shouldCreateUser: true } });
+    setBusy(false);
+    if (error) return setError(friendlyAuthError(error));
     setEmail(clean);
     setCode("");
     setStep("code");
@@ -88,7 +102,9 @@ export default function SignIn({ onSignedIn }) {
                 Your coach is waiting. <span style={{ color: "var(--accent-ink)" }}>Let's get you in.</span>
               </motion.h1>
               <motion.p className="muted" variants={rise}>
-                Enter your Gmail. We'll send a 6-digit code — no password needed.
+                {withCode
+                  ? "Enter your Gmail. We'll send a 6-digit code — no password needed."
+                  : "Enter your email to continue. No password needed."}
               </motion.p>
               <motion.div className="field" variants={rise}>
                 <label className="sr-only" htmlFor="email">Email</label>
@@ -107,7 +123,9 @@ export default function SignIn({ onSignedIn }) {
               <AnimatePresence>{error && <ErrorLine text={error} />}</AnimatePresence>
               <motion.div variants={rise}>
                 <Button variant="primary" className="wide lg" type="submit" disabled={busy || !email.trim()}>
-                  {busy ? "Sending…" : <>Send code <PaperPlaneTiltIcon size={18} weight="fill" /></>}
+                  {withCode
+                    ? busy ? "Sending…" : <>Send code <PaperPlaneTiltIcon size={18} weight="fill" /></>
+                    : busy ? "Signing in…" : <>Continue <ArrowRightIcon size={18} weight="bold" /></>}
                 </Button>
               </motion.div>
               <motion.p className="hint" variants={rise} style={{ textAlign: "center" }}>

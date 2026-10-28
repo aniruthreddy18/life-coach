@@ -4,8 +4,8 @@ An app that gets to know you (12 onboarding questions + an AI level test), score
 builds a 12-week roadmap, plans your tasks every day, checks in with you every night,
 talks to you like a friend/teacher/mentor, and writes you a weekly report.
 
-**Sign in with your email + a 6-digit code** (no passwords). The 12 questions are asked only the
-first time; after that the app opens straight away until you sign out. Every time you open it you
+**Sign in with just your email** (no password; a 6-digit email code can be switched on later with
+`AUTH_MODE=otp`). The 12 questions are asked only the first time; after that the app opens straight away until you sign out. Every time you open it you
 get a different funny hello ("Hii bro, ela unnav? 😄"), and the daily notifications talk like a
 friend ("Smooth start chesava master uu?", "Rey Kamal Haasan, what's the update?"), in Tenglish,
 Hinglish or English depending on the language you pick.
@@ -63,6 +63,14 @@ Dashboard: https://supabase.com/dashboard/project/wkamdfylxzaiyggvrqsh
 3. Replace `[YOUR-PASSWORD]` (including the brackets) with your database password.
    Forgot it? **Project Settings → Database → Reset database password.**
    If the password has symbols like `@ # / ?`, reset it to one with only letters and numbers (symbols break the URI).
+
+### 3b + 3c are only for LATER, when you turn on email codes (`AUTH_MODE=otp`)
+Right now `AUTH_MODE=email`: you sign in by typing your email, no code, no emails sent, so you can skip
+these two steps. When you want codes: do 3b + 3c, set `AUTH_MODE=otp` in `server/.env`, restart.
+Same email = same account in both modes, so nobody loses their data.
+
+> ⚠️ In email mode anyone who types your email opens your account. Fine for you + friends while
+> testing; turn on codes before sharing the app widely.
 
 ### 3b. Make the email show a CODE (not just a link)
 **Authentication → Emails → Templates.** Edit **both** of these templates so the body includes `{{ .Token }}`:
@@ -144,8 +152,7 @@ Open **http://localhost:5173**
 
 Press `Ctrl + C` in the terminal to stop.
 
-**What you'll see:** the sign-in screen → type your Gmail → **Send code** → type the 6-digit code from
-your inbox → first time only: the 12 questions + level test → your app. Next time you open it, you go
+**What you'll see:** the sign-in screen → type your email → **Continue** → first time only: the 12 questions + level test → your app. Next time you open it, you go
 straight in (with a new funny hello) until you press **Settings → Sign out**.
 
 ## 6. Turn on notifications
@@ -233,6 +240,7 @@ On OpenRouter, model names include the company: `openai/…`, `anthropic/…`, `
 | Problem | Fix |
 |---|---|
 | **Anything at all** | Run `npm run doctor` (in the `server` folder: `cd server && npm run doctor`). It names the problem and the fix. |
+| Code emails (only with `AUTH_MODE=otp`): | |
 | "Email address not authorized" on the sign-in screen | Gmail SMTP isn't set up yet (step 3c). Until then only your own Supabase account email gets codes. |
 | The code email has only a link, no code | Edit the **Magic Link** and **Confirm signup** templates to include `{{ .Token }}` (step 3b). |
 | No email arrives | Check Spam / Promotions. Wait 60 s before **Resend** (one code per minute). Check the Gmail app password in SMTP Settings. |
@@ -240,6 +248,7 @@ On OpenRouter, model names include the company: `openai/…`, `anthropic/…`, `
 | "Too many codes requested" | Rate limit. Wait a minute, or raise it in **Authentication → Rate Limits**. |
 | Server says "DATABASE_URL is missing" / "Can't use the database" | Step 3a. Wrong password → reset it; "Tenant or user not found" → copy the Session pooler URI again. |
 | "Missing tables" in doctor | `cd server && npm run db:setup` |
+| `getaddrinfo ENOTFOUND db.….supabase.co` | You used the **Direct** connection. Use **Connect → Session pooler** instead (step 3a). |
 | "Sign-in isn't set up yet" page | `SUPABASE_URL` / `SUPABASE_PUBLISHABLE_KEY` missing from `server/.env`. |
 | Project paused (free plan, after ~7 days unused) | Open the Supabase dashboard and click **Restore**. |
 | "Can't reach the server" | Is the terminal running `npm run dev` / `npm start`? Any red error there? |
@@ -270,7 +279,7 @@ life-coach/
 │   └── src/
 │       ├── index.js        ← starts the server, public routes, then the sign-in check
 │       ├── env.js          ← loads .env
-│       ├── auth.js         ← checks your sign-in token on every request (req.user)
+│       ├── auth.js         ← sign-in (email or code) + checks your token on every request (req.user)
 │       ├── db.js           ← Postgres connection pool + SQL helpers
 │       ├── messages.js     ← the funny hellos + notifications (Tenglish / Hinglish / English)
 │       ├── state.js        ← reads your data, computes streak/stats, builds AI context
@@ -295,7 +304,8 @@ life-coach/
     └── src/
         ├── main.jsx        ← React starts here
         ├── App.jsx         ← sign-in → first-time onboarding → pages + dock + hello card
-        ├── supabase.js     ← sign-in client (send code, verify code, stay signed in)
+        ├── auth.js         ← sign-in in the browser (email mode or code mode), stay signed in
+        ├── supabase.js     ← code sign-in client (only used when AUTH_MODE=otp)
         ├── api.js          ← every call to the backend lives here (adds your token)
         ├── components.jsx  ← reusable ANIMATED pieces (cards, ring, checkbox, charts, counters)
         ├── theme.js        ← System / Light / Dark switch
