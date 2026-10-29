@@ -13,7 +13,7 @@ import { pool } from "../src/db.js";
 
 // Run in this order: the base tables, then the study-buddies tables
 const dbDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "db");
-const files = ["schema.sql", "friends.sql"].map((f) => path.join(dbDir, f));
+const files = ["schema.sql", "friends.sql", "curriculum.sql"].map((f) => path.join(dbDir, f));
 
 if (!process.env.DATABASE_URL) {
   console.error("\n❌ DATABASE_URL is missing in server/.env (see the comments in .env.example).\n");

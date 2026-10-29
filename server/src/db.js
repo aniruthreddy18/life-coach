@@ -73,9 +73,17 @@ export async function setSetting(key, value) {
 }
 
 // Dates as "YYYY-MM-DD" in the server's local time zone
+// The app's clock: India time (IST) by default, whatever time zone the
+// server computer uses. A new day starts at midnight IST for everyone.
+// Change APP_TIMEZONE in .env to run it for another country.
+export const APP_TIMEZONE = process.env.APP_TIMEZONE || "Asia/Kolkata";
+const ymdFormat = new Intl.DateTimeFormat("en-CA", { timeZone: APP_TIMEZONE, year: "numeric", month: "2-digit", day: "2-digit" });
+
+// Today's date as "YYYY-MM-DD" in APP_TIMEZONE (offsetDays: -1 = yesterday)
 export function today(offsetDays = 0) {
-  const d = new Date();
-  d.setDate(d.getDate() + offsetDays);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const ymd = ymdFormat.format(new Date()); // en-CA prints YYYY-MM-DD
+  if (!offsetDays) return ymd;
+  const d = new Date(ymd + "T00:00:00Z"); // date maths in UTC: no daylight-saving surprises
+  d.setUTCDate(d.getUTCDate() + offsetDays);
+  return d.toISOString().slice(0, 10);
 }

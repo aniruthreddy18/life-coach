@@ -31,7 +31,8 @@ export async function currentMilestone(uid, profile) {
 }
 
 export async function getTasks(uid, date) {
-  return all("SELECT * FROM tasks WHERE user_id = $1 AND date = $2 ORDER BY id", uid, date);
+  // Backlog (carried from earlier days) first, oldest first, then today's new tasks
+  return all("SELECT * FROM tasks WHERE user_id = $1 AND date = $2 ORDER BY from_date NULLS LAST, id", uid, date);
 }
 
 // Streak = how many days in a row you checked in.

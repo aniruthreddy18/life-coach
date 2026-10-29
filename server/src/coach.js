@@ -21,6 +21,7 @@ import {
 import * as rules from "./rules.js";
 import * as library from "./library.js";
 import { greeting } from "./messages.js";
+import { DSA_ITEMS, DSA_WEEKS } from "./data/dsaCurriculum.js";
 
 // Helper to describe JSON shapes for the AI (JSON Schema).
 // Every object must list its fields and forbid extra ones.
@@ -140,8 +141,10 @@ ${quizSummary}
       () => ruleBased,
     ),
 
-    // (b) Roadmap — library first, then the "smart" model, then a generic template
+    // (b) Roadmap — DSA learners get the fixed 150-problem curriculum (free);
+    //     others: library first, then the "smart" model, then a generic template
     (async () => {
+      if (isDsaLearner({ answers })) return { roadmap: DSA_WEEKS, source: "curriculum" };
       const saved = await library.findRoadmap(roadmapKey);
       if (saved) return { roadmap: saved, source: "library" };
       return aiOrRules(
@@ -181,12 +184,13 @@ Keep it general to this goal and level (no names), so it can be reused for simil
     await q("DELETE FROM tasks WHERE user_id = $1", uid);
     await q("DELETE FROM milestones WHERE user_id = $1", uid);
     await q(
-      `INSERT INTO profiles (user_id, name, answers, quiz_score, assessment, coach_style, language, start_date, memory_summary)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO profiles (user_id, name, answers, quiz_score, assessment, coach_style, language, start_date, memory_summary, track, planned_on)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL)
        ON CONFLICT (user_id) DO UPDATE SET
          name = excluded.name, answers = excluded.answers, quiz_score = excluded.quiz_score,
          assessment = excluded.assessment, coach_style = excluded.coach_style, language = excluded.language,
-         start_date = excluded.start_date, memory_summary = excluded.memory_summary`,
+         start_date = excluded.start_date, memory_summary = excluded.memory_summary,
+         track = excluded.track, planned_on = NULL`,
       uid,
       answers.name,
       JSON.stringify(answers),
@@ -196,6 +200,7 @@ Keep it general to this goal and level (no names), so it can be reused for simil
       answers.language,
       today(),
       memory_summary ?? "",
+      roadmapResult.source === "curriculum" ? "dsa" : null,
     );
     for (const w of roadmapResult.roadmap) {
       await q(
@@ -213,38 +218,144 @@ Keep it general to this goal and level (no names), so it can be reused for simil
   };
 }
 
-// ---- 3. Tasks: planned a WEEK at a time ----------------------------------
-// One AI call plans 7 days (instead of 7 calls). Each day, rules carry
-// over up to 2 unfinished tasks from yesterday — no AI needed for that.
+// ---- 3. Tasks: a new day at 12:01 AM (India time) -----------------------
+// Every day (scheduler.js runs this at 12:01 AM for everyone, and the app
+// runs it again when opened, in case the server was asleep):
+//   1. BACKLOG: every unfinished task from earlier days moves to today,
+//      so missing a day means MORE work today, never a skipped concept.
+//   2. NEW tasks:
+//      - DSA learners follow the 150-problem curriculum (data/dsaCurriculum.js):
+//        each week's concepts are split over 6 study days, Sunday is revision.
+//        Items are handed out in order, once each, so nothing is skipped.
+//      - Everyone else: one AI call plans the week (planWeek, below).
 const planning = new Map(); // uid -> promise, so two requests share one plan
+
+export const isDsaLearner = (profile) => library.detectTopics(profile?.answers?.learn ?? "").includes("dsa");
 
 export async function ensureTodayTasks(uid) {
   const profile = await getProfile(uid);
   if (!profile) return { tasks: [], message: null };
-
-  if (!(await getTasks(uid, today())).length) {
-    if (!planning.has(uid)) planning.set(uid, planWeek(uid, profile).finally(() => planning.delete(uid)));
-    await planning.get(uid);
-  }
-  await carryOverUnfinished(uid);
+  if (!planning.has(uid)) planning.set(uid, prepareDay(uid, profile).finally(() => planning.delete(uid)));
+  await planning.get(uid);
   const tasks = await getTasks(uid, today());
   return { tasks, message: rules.morningMessage(profile, tasks) };
 }
 
+async function prepareDay(uid, profile) {
+  await carryOverUnfinished(uid);
+  if (profile.planned_on === today()) return; // today's new tasks are already planned
+  if (isDsaLearner(profile)) await planCurriculumDay(uid, profile);
+  // AI students: one call plans 7 days ahead, so only plan when today is empty
+  else if (!(await get("SELECT 1 FROM tasks WHERE user_id = $1 AND date = $2 AND from_date IS NULL", uid, today()))) {
+    await planWeek(uid, profile);
+  }
+  await run("UPDATE profiles SET planned_on = $2 WHERE user_id = $1", uid, today());
+}
+
+// Unfinished tasks from ANY earlier day (not just yesterday: the student may
+// have been away) move to today, keeping their link and the day they were
+// first given (from_date). Revision tasks don't move: they're optional.
 async function carryOverUnfinished(uid) {
-  const yesterday = today(-1);
   const unfinished = await all(
-    "SELECT * FROM tasks WHERE user_id = $1 AND date = $2 AND NOT done AND NOT carried ORDER BY id LIMIT 2",
-    uid, yesterday,
+    `SELECT * FROM tasks WHERE user_id = $1 AND date < $2 AND NOT done AND NOT carried
+        AND COALESCE(kind, '') <> 'revision'
+      ORDER BY date, id`,
+    uid, today(),
   );
   for (const t of unfinished) {
-    const title = t.title.startsWith("↩ ") ? t.title : `↩ ${t.title}`;
     await run(
-      "INSERT INTO tasks (user_id, date, title, details, minutes, milestone_id) VALUES ($1, $2, $3, $4, $5, $6)",
-      uid, today(), title, t.details, t.minutes, t.milestone_id,
+      `INSERT INTO tasks (user_id, date, title, details, minutes, milestone_id, item_id, kind, topic, difficulty, link, video, from_date)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      uid, today(), t.title.replace(/^↩ /, ""), t.details, t.minutes, t.milestone_id,
+      t.item_id, t.kind, t.topic, t.difficulty, t.link, t.video, t.from_date ?? t.date,
     );
   }
-  await run("UPDATE tasks SET carried = true WHERE user_id = $1 AND date = $2 AND NOT done", uid, yesterday);
+  await run("UPDATE tasks SET carried = true WHERE user_id = $1 AND date < $2 AND NOT done AND NOT carried", uid, today());
+}
+
+const daysSince = (date) => Math.round((new Date(today() + "T00:00:00Z") - new Date(date + "T00:00:00Z")) / 86_400_000);
+
+// Students who chose DSA get the curriculum roadmap (once), replacing an
+// older AI-written one, so the Plan page matches the daily tasks.
+async function useCurriculumRoadmap(uid) {
+  await transaction(async (q) => {
+    await q("DELETE FROM milestones WHERE user_id = $1", uid); // old tasks keep working (milestone_id -> NULL)
+    // The old AI plan for today and later is replaced by the curriculum
+    // (finished tasks and past days stay untouched)
+    await q(
+      "DELETE FROM tasks WHERE user_id = $1 AND date >= $2 AND NOT done AND item_id IS NULL AND from_date IS NULL",
+      uid, today(),
+    );
+    for (const w of DSA_WEEKS) {
+      await q(
+        "INSERT INTO milestones (user_id, week_number, title, focus, goals) VALUES ($1, $2, $3, $4, $5)",
+        uid, w.week_number, w.title, w.focus, JSON.stringify(w.goals),
+      );
+    }
+    await q("UPDATE profiles SET track = 'dsa' WHERE user_id = $1", uid);
+  });
+}
+
+const insertTask = (uid, t, milestoneId) =>
+  run(
+    `INSERT INTO tasks (user_id, date, title, details, minutes, milestone_id, item_id, kind, topic, difficulty, link, video)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    uid, today(), t.title, t.details, t.minutes, milestoneId,
+    t.item_id ?? null, t.kind ?? null, t.topic ?? null, t.difficulty ?? null, t.link ?? null, t.video ?? null,
+  );
+
+// Today's NEW curriculum items for a DSA learner
+export async function planCurriculumDay(uid, profile) {
+  if (profile.track !== "dsa") await useCurriculumRoadmap(uid);
+  const milestones = await getMilestones(uid);
+  const milestoneFor = (week) => milestones.find((m) => m.week_number === week)?.id ?? null;
+
+  const given = new Set(
+    (await all("SELECT DISTINCT item_id FROM tasks WHERE user_id = $1 AND item_id IS NOT NULL", uid)).map((r) => r.item_id),
+  );
+  const remaining = DSA_ITEMS.filter((i) => !given.has(i.id));
+  const backlog = await all("SELECT minutes FROM tasks WHERE user_id = $1 AND date = $2 AND from_date IS NOT NULL", uid, today());
+  const backlogMinutes = backlog.reduce((sum, t) => sum + t.minutes, 0);
+  const capacity = rules.minutesFor(profile.answers.hours);
+  const dayOfWeek = daysSince(profile.start_date) % 7; // 0-5 study days, 6 = revision day
+
+  // Sunday-style revision day (or the whole curriculum is done): revise, no new concepts
+  if (dayOfWeek === 6 || !remaining.length) {
+    const solved = await all(
+      `SELECT DISTINCT ON (item_id) title, link, video, topic, difficulty, milestone_id FROM tasks
+        WHERE user_id = $1 AND kind = 'problem' AND done AND date >= $2
+        ORDER BY item_id, date DESC`,
+      uid, today(remaining.length ? -6 : -60),
+    );
+    const pickThree = solved.sort((a, b) => (b.difficulty === "Hard") - (a.difficulty === "Hard") || (b.difficulty === "Medium") - (a.difficulty === "Medium")).slice(0, 3);
+    for (const p of pickThree) {
+      await insertTask(uid, {
+        title: `Revise: ${p.title}`,
+        details: "Solve it again from scratch without looking at your old code, in under 20 minutes.",
+        minutes: 20, kind: "revision", topic: p.topic, difficulty: p.difficulty, link: p.link, video: p.video,
+      }, p.milestone_id);
+    }
+    if (!pickThree.length && !backlog.length) {
+      await insertTask(uid, {
+        title: remaining.length ? "Revision day: re-read this week's notes" : "All 150 problems done! Pick any 2 and solve them faster",
+        details: "Write down the patterns you learned this week and one mistake you won't repeat.",
+        minutes: 30, kind: "revision",
+      }, null);
+    }
+    return;
+  }
+
+  // Study day: spread what's left of the current week over the study days left,
+  // so the whole week is covered by day 6 and no concept is skipped.
+  const week = remaining[0].week;
+  const weekLeft = remaining.filter((i) => i.week === week);
+  let quota = Math.ceil(weekLeft.length / (6 - dayOfWeek));
+  // Lots of backlog? Slow down new concepts (they wait, they're never skipped)
+  if (backlogMinutes >= 2 * capacity) quota = 0; // catch-up day: finish the backlog first
+  else if (backlogMinutes >= capacity) quota = Math.max(1, Math.ceil(quota / 2));
+  for (const item of weekLeft.slice(0, quota)) {
+    await insertTask(uid, { ...item, item_id: item.id }, milestoneFor(item.week));
+  }
 }
 
 async function planWeek(uid, profile) {
@@ -289,7 +400,8 @@ Make day 6 lighter (revision). details: 1 sentence on what "done" means.`,
   for (const day of plan.days) {
     if (day.day_offset < 0 || day.day_offset >= DAYS) continue;
     const date = today(day.day_offset);
-    if ((await getTasks(uid, date)).length) continue; // never overwrite a day that already has tasks
+    // never overwrite a day that already has its own (non-backlog) tasks
+    if (await get("SELECT 1 FROM tasks WHERE user_id = $1 AND date = $2 AND from_date IS NULL", uid, date)) continue;
     const milestoneId = milestones.find((m) => m.week_number === weekOf(day.day_offset))?.id ?? null;
     for (const t of day.tasks) {
       await run(

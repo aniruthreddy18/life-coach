@@ -205,6 +205,24 @@ to `otp` in Render → Environment.
 10 very active students ≈ $0.50/day worst case; most days far less thanks to the library + rules.
 Set a credit limit on your key at openrouter.ai/keys so a surprise can never cost more than you chose.
 
+## 📅 Daily plan (India time)
+
+- **A new day starts at 12:01 AM IST** for every student (`NEW_DAY_TIME`, `APP_TIMEZONE=Asia/Kolkata`).
+  The server's own clock doesn't matter. If the server was asleep, the plan is made when the app is opened.
+- **Missed work is never lost:** every unfinished task moves to the next day, tagged "Backlog · from <date>",
+  on top of today's new tasks, so skipping a day means more work today. The morning message says so
+  ("Ninna 2 pending unnayi ra, so ivala total 4 tasks 😤").
+- **Too much backlog?** New topics slow down (backlog over one day's study time) or pause (over two days),
+  so the student catches up first. They are delayed, never skipped.
+- **DSA students follow a fixed 12-week curriculum** of the 150 most-asked interview problems (the NeetCode 150),
+  in `server/src/data/dsaCurriculum.js`:
+  - every topic starts with a short "Learn" task, then its problems, easy to hard;
+  - each week's problems are spread over 6 study days, and day 7 is revision (re-solve 3 problems from the week);
+  - every problem has a **Solve on LeetCode** button and a **Stuck? Watch solution** video link;
+  - the 7 LeetCode Premium problems link to the same problem free on LintCode;
+  - the Plan page shows the same 12 weeks, so the roadmap and the daily tasks always match.
+- Other subjects keep the AI weekly plan (one AI call per week), with the same backlog rule.
+
 ## 🤝 Study buddies (Friends tab)
 
 | Feature | How it works |
@@ -321,6 +339,7 @@ life-coach/
 │   ├── .env                ← your secrets + AI_PROVIDER switch (never share!)
 │   ├── db/schema.sql       ← the main tables (already in Supabase; `npm run db:setup` re-creates them)
 │   ├── db/friends.sql      ← study-buddy tables (friendships, chat, duels, weekly quizzes)
+│   ├── db/curriculum.sql   ← task links, difficulty, backlog date; profile plan settings
 │   ├── scripts/
 │   │   ├── doctor.js       ← `npm run doctor`: checks .env, AI key, Supabase, database
 │   │   ├── db-setup.js     ← `npm run db:setup`
@@ -345,6 +364,7 @@ life-coach/
 │       ├── rules.js        ← the FREE brain: live scores, grades, templates, plans without AI
 │       ├── library.js      ← shared content library: question bank, saved roadmaps, saved explanations
 │       ├── data/questionBank.js ← 56 built-in level-test questions
+│       ├── data/dsaCurriculum.js ← 12-week DSA plan: 150 LeetCode problems + 18 "Learn" topics
 │       ├── usage.js        ← token + cost tracking, daily budget
 │       ├── questions.js    ← the onboarding questions
 │       ├── push.js         ← sends notifications to each student's devices

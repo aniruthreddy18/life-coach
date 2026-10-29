@@ -485,6 +485,7 @@ em { font-style: normal; } /* emphasis = colour, not italics */
   font-size: 0.93rem; margin-bottom: 12px;
 }
 .quote svg { color: var(--accent-ink); flex-shrink: 0; margin-top: 2px; }
+.quote span { white-space: pre-line; } /* the morning message can have a second line (the backlog) */
 
 .tasks { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
 .task {
@@ -860,3 +861,13 @@ a.friend-row:hover { border-color: var(--line-strong); }
 }
 .menu > button:hover { background: var(--surface-2); }
 .menu > button.danger { color: var(--bad); }
+
+/* ---------- 20. Daily plan: LeetCode links + backlog ---------- */
+.task-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0; }
+.task-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.btn.sm { min-height: 36px; padding: 0 12px; font-size: 0.85rem; border-radius: 10px; }
+.backlog-note {
+  font-size: 0.88rem; color: var(--text-2); margin: -4px 0 12px;
+  padding: 10px 12px; border-radius: 12px; background: var(--bad-soft);
+}
+.backlog-note strong { color: var(--bad); }

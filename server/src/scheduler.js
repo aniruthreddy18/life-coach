@@ -7,14 +7,14 @@
 // Cron syntax: "minute hour day-of-month month day-of-week"
 //   "30 7 * * *"  = every day at 07:30
 //   "0 20 * * 0"  = every Sunday at 20:00
-// Times use the server's local time zone.
+// Times are India time (APP_TIMEZONE), whatever the server's own clock says.
 //
 // Each job loops over every student who has notifications turned
 // on, and sends them a funny line in THEIR language (messages.js).
 // One student's error never stops the others (try/catch per student).
 // =============================================================
 import cron from "node-cron";
-import { all, get, today } from "./db.js";
+import { all, get, today, APP_TIMEZONE } from "./db.js";
 import { getTasks } from "./state.js";
 import { ensureTodayTasks, generateWeeklyReport } from "./coach.js";
 import { notifyUser } from "./push.js";
@@ -34,10 +34,13 @@ async function subscribedProfiles() {
   );
 }
 
-// Run job(profile) for every subscribed student, one at a time
-function forEachStudent(name, job) {
+// Every student who finished onboarding (with or without notifications)
+const allProfiles = () => all("SELECT * FROM profiles");
+
+// Run job(profile) for each student, one at a time
+function forEachStudent(name, job, who = subscribedProfiles) {
   return async () => {
-    for (const profile of await subscribedProfiles()) {
+    for (const profile of await who()) {
       try {
         await job(profile);
       } catch (err) {
@@ -47,10 +50,17 @@ function forEachStudent(name, job) {
   };
 }
 
-// The four daily/weekly jobs. Exported so you can run one by hand:
-//   node -e 'import("./src/scheduler.js").then(m => m.jobs.morning())'
+// The daily/weekly jobs. Exported so you can run one by hand:
+//   node -e 'import("./src/scheduler.js").then(m => m.jobs.newDay())'
 export const jobs = {
-  // Morning: make today's plan and send it ("Smooth start chesava master uu?")
+  // 12:01 AM: a new day for EVERY student. Yesterday's unfinished tasks
+  // carry over (more work today) and today's new tasks are planned.
+  newDay: forEachStudent("New day", async (p) => {
+    const { tasks } = await ensureTodayTasks(p.user_id);
+    console.log(`🌅 ${p.name}: ${tasks.length} task(s) for ${today()} (${tasks.filter((t) => t.from_date).length} carried over)`);
+  }, allProfiles),
+
+  // Morning: send today's plan ("Smooth start chesava master uu?")
   morning: forEachStudent("Morning", async (p) => {
     const { tasks, message } = await ensureTodayTasks(p.user_id);
     const list = tasks.map((t) => `• ${t.title}`).join("\n");
@@ -88,10 +98,12 @@ export const jobs = {
 };
 
 export function startScheduler() {
-  cron.schedule(toCron(process.env.MORNING_TIME, "07:30"), jobs.morning);
-  cron.schedule(toCron(process.env.EVENING_TIME, "21:00"), jobs.evening);
-  cron.schedule(toCron(process.env.NUDGE_TIME, "22:30"), jobs.nudge);
-  cron.schedule("0 20 * * 0", jobs.weekly); // Sunday 8 PM
-  cron.schedule(toCron(process.env.DUEL_END_TIME, "23:55"), jobs.duels);
-  console.log("⏰ Scheduler running (morning plan, evening check-in, nudge, duel results, weekly report)");
+  const at = (expr, job) => cron.schedule(expr, job, { timezone: APP_TIMEZONE });
+  at(toCron(process.env.NEW_DAY_TIME, "00:01"), jobs.newDay);
+  at(toCron(process.env.MORNING_TIME, "07:30"), jobs.morning);
+  at(toCron(process.env.EVENING_TIME, "21:00"), jobs.evening);
+  at(toCron(process.env.NUDGE_TIME, "22:30"), jobs.nudge);
+  at("0 20 * * 0", jobs.weekly); // Sunday 8 PM
+  at(toCron(process.env.DUEL_END_TIME, "23:55"), jobs.duels);
+  console.log(`⏰ Scheduler running on ${APP_TIMEZONE} time (12:01 AM new day, morning plan, evening check-in, nudge, duel results, weekly report)`);
 }

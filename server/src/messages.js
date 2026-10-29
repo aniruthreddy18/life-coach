@@ -166,8 +166,19 @@ function pick(lists, language, values) {
   return fill(list[dayIndex() % list.length], values);
 }
 
-export const morningNote = (profile, tasks) =>
-  pick(MORNING, profile.language, { name: profile.name, first: tasks[0]?.title ?? "open the app for today's plan" });
+// Yesterday's unfinished work moved to today: say so (and how much there is)
+const BACKLOG = {
+  te: "Ninna {n} pending unnayi ra, so ivala total {total} tasks 😤 First backlog clear chey!",
+  hi: "Kal ke {n} kaam baaki hain, isliye aaj total {total} tasks 😤 Pehle backlog khatam kar!",
+  en: "{n} left over from earlier, so {total} tasks today 😤 Clear the backlog first!",
+};
+
+export function morningNote(profile, tasks) {
+  const fresh = tasks.filter((t) => !t.from_date);
+  const carried = tasks.length - fresh.length;
+  const line = pick(MORNING, profile.language, { name: profile.name, first: (fresh[0] ?? tasks[0])?.title ?? "open the app for today's plan" });
+  return carried ? `${line}\n${fill(BACKLOG[langOf(profile.language)], { n: carried, total: tasks.length })}` : line;
+}
 export const eveningNote = (profile, done, total) => pick(EVENING, profile.language, { name: profile.name, done, total });
 export const nudgeNote = (profile) => pick(NUDGE, profile.language, { name: profile.name });
 export const reportNote = (profile, grade) => fill(REPORT[langOf(profile.language)], { grade });

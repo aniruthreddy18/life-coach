@@ -8,13 +8,16 @@ import { Link } from "react-router-dom";
 import { AnimatePresence, motion } from "motion/react";
 import {
   FireIcon, TargetIcon, SmileyIcon, ListChecksIcon, ChartBarIcon, PulseIcon, QuotesIcon, ArrowRightIcon,
-  WarningIcon, CalendarCheckIcon, SparkleIcon,
+  WarningIcon, CalendarCheckIcon, SparkleIcon, ArrowSquareOutIcon, PlayCircleIcon,
 } from "@phosphor-icons/react";
 import { api } from "../api.js";
 import {
   Page, Card, Reveal, Ring, Check, StatTile, ScoreBars, CompletionChart, PageSkeleton, Skeleton, Button,
   celebrate, spring, itemVariants,
 } from "../components.jsx";
+
+const DIFFICULTY_TAG = { Easy: "good", Medium: "", Hard: "bad" };
+const shortDate = (d) => new Date(d + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short" });
 
 export default function Dashboard() {
   const [data, setData] = useState(null);
@@ -27,7 +30,7 @@ export default function Dashboard() {
     try {
       const d = await api("/dashboard");
       setData(d);
-      if (d.tasks.length === 0) planToday();
+      if (!d.plannedToday) planToday(); // new day: carry over the backlog + plan today
     } catch (e) {
       setError(e.message);
     }
@@ -76,6 +79,7 @@ export default function Dashboard() {
 
   const done = data.tasks.filter((t) => t.done).length;
   const total = data.tasks.length;
+  const carried = data.tasks.filter((t) => t.from_date).length; // backlog from earlier days
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
   // Unfinished tasks first; finished ones glide to the bottom (layout animation)
@@ -125,6 +129,11 @@ export default function Dashboard() {
             <h2 className="card-title"><ListChecksIcon size={18} weight="bold" /> Today's tasks</h2>
             <span className="num faint">{done}/{total}</span>
           </div>
+          {carried > 0 && (
+            <p className="backlog-note">
+              <strong>{total - carried} new + {carried} from earlier.</strong> Unfinished work moves to the next day, so no concept is skipped. Clear the backlog first.
+            </p>
+          )}
 
           <AnimatePresence>
             {morningMsg && (
@@ -138,7 +147,7 @@ export default function Dashboard() {
           {planning && (
             <div className="tasks" aria-busy="true">
               <p className="muted" style={{ marginBottom: 6 }}>
-                <SparkleIcon size={14} weight="fill" style={{ verticalAlign: "-2px" }} /> Coach is planning your week…
+                <SparkleIcon size={14} weight="fill" style={{ verticalAlign: "-2px" }} /> Getting today's tasks ready…
               </p>
               <Skeleton height={64} />
               <Skeleton height={64} />
@@ -170,9 +179,31 @@ export default function Dashboard() {
                         transition={{ duration: 0.3, ease: "easeOut" }}
                       />
                     </span>
+                    {(t.from_date || t.difficulty || t.topic) && (
+                      <span className="task-tags">
+                        {t.from_date && <span className="tag bad">Backlog · from {shortDate(t.from_date)}</span>}
+                        {t.difficulty && <span className={`tag ${DIFFICULTY_TAG[t.difficulty] ?? "neutral"}`}>{t.difficulty}</span>}
+                        {t.topic && <span className="tag neutral">{t.topic}</span>}
+                      </span>
+                    )}
                     <span className="task-meta">
                       {t.details} · <span className="num">{t.minutes} min</span>
                     </span>
+                    {(t.link || t.video) && (
+                      // stopPropagation: tapping a link opens it, it doesn't tick the task
+                      <span className="task-links" onClick={(e) => e.stopPropagation()}>
+                        {t.link && (
+                          <a className="btn primary sm" href={t.link} target="_blank" rel="noopener noreferrer">
+                            {t.link.includes("lintcode.com") ? "Solve free on LintCode" : "Solve on LeetCode"} <ArrowSquareOutIcon size={14} weight="bold" />
+                          </a>
+                        )}
+                        {t.video && (
+                          <a className="btn ghost sm" href={t.video} target="_blank" rel="noopener noreferrer">
+                            <PlayCircleIcon size={16} weight="fill" /> Stuck? Watch solution
+                          </a>
+                        )}
+                      </span>
+                    )}
                   </div>
                 </motion.li>
               ))}

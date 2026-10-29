@@ -51,6 +51,7 @@ router.get("/dashboard", async (req, res) => {
     completionRate: total ? Math.round((done / total) * 100) : null,
     avgMood: moods.length ? +(moods.reduce((a, b) => a + b, 0) / moods.length).toFixed(1) : null,
     checkedInToday: Boolean(checkedIn),
+    plannedToday: profile.planned_on === today(), // false -> the app asks /tasks/today to plan the day
     stats,
     liveScores: scores,
     ai: { enabled: AI_ENABLED, overBudget, ...aiStatus },
