@@ -75,17 +75,26 @@ export async function enableNotifications() {
   await api("/push/subscribe", { method: "POST", body: subscription.toJSON() });
 }
 
-// Signing out: stop notifications on THIS device for this account
-export async function disableNotificationsHere() {
+// Signing out: stop notifications on THIS device for this account.
+// Runs in the background AFTER sign-out (with the old token), so a slow or
+// sleeping server never blocks signing out.
+export async function disableNotificationsHere(token) {
   try {
     if (!("serviceWorker" in navigator)) return;
     const reg = await navigator.serviceWorker.getRegistration();
-    const sub = await reg?.pushManager.getSubscription();
+    const sub = await reg?.pushManager?.getSubscription();
     if (!sub) return;
-    await api("/push/unsubscribe", { method: "POST", body: { endpoint: sub.endpoint } });
-    await sub.unsubscribe();
+    await sub.unsubscribe(); // this browser stops receiving pushes right away
+    if (token) {
+      await fetch("/api/push/unsubscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ endpoint: sub.endpoint }),
+        signal: AbortSignal.timeout(15_000),
+      });
+    }
   } catch {
-    // not fatal: signing out still works
+    // not fatal: you're already signed out
   }
 }
 

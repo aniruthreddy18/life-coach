@@ -23,9 +23,27 @@ const readSession = () => {
   }
 };
 
+// Free hosting (Render) puts the server to sleep when nobody uses it; the
+// first request then takes up to ~1 minute while it wakes. So we retry
+// network errors and "waking up" answers (502/503/504) for up to 90 s,
+// calling onWaiting() so the screen can say what's happening.
+export async function fetchWithWake(url, options = {}, onWaiting) {
+  const deadline = Date.now() + 90_000;
+  for (;;) {
+    try {
+      const res = await fetch(url, { ...options, signal: AbortSignal.timeout(30_000) });
+      if (![502, 503, 504].includes(res.status) || Date.now() > deadline) return res;
+    } catch (err) {
+      if (Date.now() > deadline) throw err;
+    }
+    onWaiting?.();
+    await new Promise((resolve) => setTimeout(resolve, 3000));
+  }
+}
+
 // Ask the server which sign-in to use; set up Supabase only for "otp"
-export async function initAuth() {
-  const res = await fetch("/api/config").catch(() => null);
+export async function initAuth(onWaiting) {
+  const res = await fetchWithWake("/api/config", {}, onWaiting).catch(() => null);
   if (!res?.ok) throw Object.assign(new Error("Server not reachable"), { kind: "server" });
   const config = await res.json();
   mode = config.authMode === "otp" ? "otp" : "email";
@@ -53,14 +71,14 @@ export async function accessToken() {
   return readSession()?.token ?? null;
 }
 
-// Email mode: one request, and you're in
-export async function signInWithEmail(email) {
-  const res = await fetch("/api/auth/email", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email }),
-  }).catch(() => null);
-  if (!res) throw new Error("Can't reach the server. Is it running?");
+// Email mode: one request, and you're in (an existing email = the same account)
+export async function signInWithEmail(email, onWaiting) {
+  const res = await fetchWithWake(
+    "/api/auth/email",
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) },
+    onWaiting,
+  ).catch(() => null);
+  if (!res) throw new Error("Can't reach Life Coach right now. Check your internet and try again.");
   const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(data?.error || "Sign-in failed. Try again.");
   try {
@@ -69,11 +87,16 @@ export async function signInWithEmail(email) {
   return data;
 }
 
+// Signing out only forgets the session ON THIS DEVICE, so it never waits
+// for the server (and works even offline or while the server is asleep).
 export async function signOut() {
   try {
     localStorage.removeItem(KEY);
   } catch {}
-  if (mode === "otp") await supabase()?.auth.signOut({ scope: "local" }); // this device only
+  if (mode === "otp") {
+    // supabase-js also tells Supabase; don't let a slow network keep you signed in
+    await Promise.race([supabase()?.auth.signOut({ scope: "local" }), new Promise((r) => setTimeout(r, 3000))]).catch(() => {});
+  }
 }
 
 // Signed out somewhere else (another tab) -> call fn

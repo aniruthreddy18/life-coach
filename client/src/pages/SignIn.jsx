@@ -28,6 +28,7 @@ export default function SignIn({ mode = "email", onSignedIn }) {
   const [email, setEmail] = useState(() => localStorage.getItem("last-email") ?? "");
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [waking, setWaking] = useState(false); // the server is asleep and waking up
   const [error, setError] = useState("");
   const [cooldown, setCooldown] = useState(0);
   const codeRef = useRef(null);
@@ -51,9 +52,10 @@ export default function SignIn({ mode = "email", onSignedIn }) {
     if (!withCode) {
       // Email mode: no code, the server signs you in straight away
       try {
-        return onSignedIn(await signInWithEmail(clean));
+        return onSignedIn(await signInWithEmail(clean, () => setWaking(true)));
       } catch (err) {
         setBusy(false);
+        setWaking(false);
         return setError(err.message);
       }
     }
@@ -125,7 +127,7 @@ export default function SignIn({ mode = "email", onSignedIn }) {
                 <Button variant="primary" className="wide lg" type="submit" disabled={busy || !email.trim()}>
                   {withCode
                     ? busy ? "Sending…" : <>Send code <PaperPlaneTiltIcon size={18} weight="fill" /></>
-                    : busy ? "Signing in…" : <>Continue <ArrowRightIcon size={18} weight="bold" /></>}
+                    : busy ? (waking ? "Waking up the server…" : "Signing in…") : <>Continue <ArrowRightIcon size={18} weight="bold" /></>}
                 </Button>
               </motion.div>
               <motion.p className="hint" variants={rise} style={{ textAlign: "center" }}>

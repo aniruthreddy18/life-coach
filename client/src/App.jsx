@@ -18,7 +18,7 @@ import {
   UsersThreeIcon,
 } from "@phosphor-icons/react";
 import { api, setUnauthorizedHandler, disableNotificationsHere } from "./api.js";
-import { initAuth, getSession, signOut as endSession, onSignedOut, authMode } from "./auth.js";
+import { initAuth, getSession, signOut as endSession, onSignedOut, authMode, accessToken } from "./auth.js";
 import { PageSkeleton, spring, softSpring } from "./components.jsx";
 import SignIn from "./pages/SignIn.jsx";
 // CODE SPLITTING: each page is downloaded only when it's first needed,
@@ -44,7 +44,7 @@ const TABS = [
 
 export default function App() {
   // "state" = data that, when it changes, makes React re-draw the screen
-  const [status, setStatus] = useState("loading"); // loading | signedOut | onboarding | ready | error | config
+  const [status, setStatus] = useState("loading"); // loading | waking | signedOut | onboarding | ready | error | config
   const [user, setUser] = useState(null);
   const [hello, setHello] = useState(null);
   const [badge, setBadge] = useState(0); // friend requests + unread messages
@@ -53,26 +53,36 @@ export default function App() {
   const navigate = useNavigate();
 
   // Signed in -> first time (onboarding) or straight into the app?
+  // (A sleeping server is retried for up to ~1 minute before giving up.)
   const routeSignedIn = useCallback(async (session) => {
     setUser(session.user);
     setStatus("loading");
-    try {
-      await api("/profile");
-      setStatus("ready");
-    } catch (err) {
-      if (err.status === 404) setStatus("onboarding");
-      else if (err.status !== 401) setStatus("error"); // 401 -> signOut() already sent us to sign-in
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await api("/profile");
+        return setStatus("ready"); // returning student -> straight to the dashboard
+      } catch (err) {
+        if (err.status === 404) return setStatus("onboarding"); // first time -> the 12 questions
+        if (err.status === 401) return; // bad session -> the 401 handler shows sign-in
+        if (attempt >= 20) return setStatus("error");
+        setStatus("waking"); // network error / server waking up: wait and retry
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+      }
     }
   }, []);
 
+  // Sign out = forget the session on THIS device, instantly. Nothing waits for
+  // the server, so it works even offline. Turning off this device's
+  // notifications happens in the background afterwards.
   const signOut = useCallback(async () => {
-    await disableNotificationsHere();
-    await endSession(); // this device only
+    const token = await accessToken();
+    await endSession();
     saidHello.current = false;
     setHello(null);
     setUser(null);
     setStatus("signedOut");
     navigate("/", { replace: true }); // next sign-in starts on "Today"
+    disableNotificationsHere(token);
   }, [navigate]);
 
   // useEffect with [] runs once, when the app first appears
@@ -83,7 +93,7 @@ export default function App() {
       setStatus("signedOut");
     });
     let unsubscribe = () => {};
-    initAuth()
+    initAuth(() => setStatus((s) => (s === "loading" ? "waking" : s)))
       .then(async () => {
         const session = await getSession(); // saved in this browser?
         if (session) routeSignedIn(session);
@@ -117,6 +127,7 @@ export default function App() {
       <a href="#main" className="skip-link">Skip to content</a>
       <Suspense fallback={<PageSkeleton />}>
       {status === "loading" && <PageSkeleton />}
+      {status === "waking" && <WakingUp />}
       {status === "error" && <ServerDown />}
       {status === "config" && <NotConfigured />}
       {status === "signedOut" && <SignIn mode={authMode()} onSignedIn={routeSignedIn} />}
@@ -254,14 +265,31 @@ function NotConfigured() {
   );
 }
 
+// Free hosting sleeps when nobody uses it; the first visit wakes it up
+function WakingUp() {
+  return (
+    <div className="center">
+      <div className="empty">
+        <div className="orbit" aria-hidden><span /><span /><span /></div>
+        <h3>Waking up Life Coach…</h3>
+        <p className="muted" style={{ maxWidth: "36ch" }}>
+          The server naps when nobody's using it. This takes up to a minute, then you'll go straight in.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function ServerDown() {
   return (
     <div className="center">
       <div className="empty">
         <div className="empty-icon"><WifiSlashIcon size={26} weight="duotone" /></div>
-        <h3>Can't reach the server</h3>
-        <p className="muted">Start it in your terminal with <code>npm run dev</code> (or run <code>npm run doctor</code> in the server folder to see what's wrong), then reload this page.</p>
-        <button className="btn" onClick={() => location.reload()}>Reload</button>
+        <h3>Can't reach Life Coach</h3>
+        <p className="muted" style={{ maxWidth: "36ch" }}>
+          Check your internet connection and try again. (Running it on your laptop? Start it with <code>npm run dev</code>.)
+        </p>
+        <button className="btn primary" onClick={() => location.reload()}>Try again</button>
       </div>
     </div>
   );
